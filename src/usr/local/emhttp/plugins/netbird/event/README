@@ -1,0 +1,4 @@
+This directory is populated at install time by ../install/doinst.sh.
+Expected symlinks:
+  array_started -> ../restart.sh
+  started       -> ../restart.sh

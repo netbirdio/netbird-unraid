@@ -1,0 +1,16 @@
+Menu="NetworkServices"
+Icon="netbird.png"
+Title="NetBird"
+Type="xmenu"
+Tabs="true"
+Markdown="false"
+---
+<?php
+try {
+    $docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+    include "{$docroot}/plugins/netbird/include/status_view.php";
+} catch (\Throwable $e) {
+    echo "<div style='background:#fee;padding:12px;border:1px solid #c00;border-radius:4px;'>"
+       . "<b>NetBird plugin error</b><pre>" . htmlspecialchars($e->getMessage() . "\n@ " . $e->getFile() . ':' . $e->getLine()) . "</pre></div>";
+}
+?>

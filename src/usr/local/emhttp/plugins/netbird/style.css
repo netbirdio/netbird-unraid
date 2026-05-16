@@ -1,0 +1,10 @@
+.netbird-page pre {
+    background: rgba(0, 0, 0, 0.04);
+    padding: 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.netbird-page code {
+    font-family: var(--mono-font, monospace);
+}

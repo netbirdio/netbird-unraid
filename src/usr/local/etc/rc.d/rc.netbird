@@ -1,0 +1,91 @@
+#!/bin/sh
+# /etc/rc.d/rc.netbird - start/stop the NetBird daemon on Unraid
+#
+# NetBird upstream uses systemd ("netbird service install/start"). Unraid runs
+# the daemon foreground here, redirecting stdout/stderr to /var/log/netbird.log
+# so that logrotate can rotate it.
+
+PLUGIN=netbird
+DAEMON=/usr/local/sbin/netbird
+LOGFILE=/var/log/netbird.log
+PIDFILE=/var/run/netbird.pid
+DAEMON_ADDR="unix:///var/run/netbird.sock"
+
+. /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
+
+is_running() {
+    /usr/bin/pgrep -f "^${DAEMON} service run" >/dev/null 2>&1
+}
+
+start_netbird() {
+    if is_running ; then
+        log "NetBird daemon already running."
+        return 0
+    fi
+
+    # Pre-flight: respect "Enable=no" in plugin settings, if set
+    if [ -f /boot/config/plugins/netbird/netbird.cfg ]; then
+        # shellcheck disable=SC1091
+        . /boot/config/plugins/netbird/netbird.cfg
+        if [ "$ENABLE_NETBIRD" = "0" ] || [ "$ENABLE_NETBIRD" = "false" ]; then
+            log "NetBird is disabled in plugin settings; not starting."
+            return 0
+        fi
+    fi
+
+    # Optional custom args (advanced users)
+    EXTRA_ARGS=""
+    if [ -f /boot/config/plugins/netbird/custom-params.sh ]; then
+        # shellcheck disable=SC1091
+        . /boot/config/plugins/netbird/custom-params.sh
+        EXTRA_ARGS="$NETBIRD_CUSTOM_PARAMS"
+    fi
+
+    log "Starting netbird: $DAEMON service run --daemon-addr $DAEMON_ADDR --log-file $LOGFILE $EXTRA_ARGS"
+    mkdir -p /var/lib/netbird /etc/netbird
+    nohup "$DAEMON" service run \
+        --daemon-addr "$DAEMON_ADDR" \
+        --log-file "$LOGFILE" \
+        $EXTRA_ARGS >>"$LOGFILE" 2>&1 &
+    echo $! > "$PIDFILE"
+}
+
+stop_netbird() {
+    log "Stopping netbird daemon."
+    # Try graceful shutdown first via the daemon's own command
+    "$DAEMON" down >/dev/null 2>&1
+    # Then kill the service run process
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    /usr/bin/pkill -f "^${DAEMON} service run" 2>/dev/null
+    rm -f /var/run/netbird.sock
+}
+
+restart_netbird() {
+    stop_netbird
+    sleep 1
+    start_netbird
+}
+
+status_netbird() {
+    if is_running ; then
+        echo "NetBird daemon is running."
+        "$DAEMON" status 2>/dev/null
+    else
+        echo "NetBird daemon is stopped."
+        return 1
+    fi
+}
+
+case "$1" in
+    start)   start_netbird   ;;
+    stop)    stop_netbird    ;;
+    restart) restart_netbird ;;
+    status)  status_netbird  ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac

@@ -1,0 +1,48 @@
+Menu="Netbird:3"
+Title="Info"
+Icon="info-circle"
+Tag="info-circle"
+Markdown="false"
+---
+<?php
+try {
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "{$docroot}/plugins/netbird/include/common.php";
+
+[$rcVer, $netbirdVer] = Netbird\nb(['version']);
+$netbirdVer = trim($netbirdVer) ?: '(unknown)';
+
+$pluginVer = '(unknown)';
+$pluginFile = '/var/log/plugins/netbird.plg';
+if (is_readable($pluginFile)) {
+    $xml = @simplexml_load_file($pluginFile);
+    if ($xml && isset($xml['version'])) {
+        $pluginVer = (string) $xml['version'];
+    }
+}
+?>
+
+<table style="width:auto;">
+    <tr><td><b>Plugin version</b></td><td><?=htmlspecialchars($pluginVer)?></td></tr>
+    <tr><td><b>NetBird version</b></td><td><?=htmlspecialchars($netbirdVer)?></td></tr>
+    <tr><td><b>NetBird binary</b></td><td><code>/usr/local/sbin/netbird</code></td></tr>
+    <tr><td><b>Config dir</b></td><td><code>/boot/config/plugins/netbird/etc</code> &rarr; <code>/etc/netbird</code></td></tr>
+    <tr><td><b>State dir</b></td><td><code>/boot/config/plugins/netbird/lib</code> &rarr; <code>/var/lib/netbird</code></td></tr>
+    <tr><td><b>Log file</b></td><td><code>/var/log/netbird.log</code></td></tr>
+    <tr><td><b>Daemon socket</b></td><td><code>/var/run/netbird.sock</code></td></tr>
+</table>
+
+<h3 style="margin-top:24px;">Resources</h3>
+<ul>
+    <li><a href="https://netbird.io/" target="_blank">NetBird homepage</a></li>
+    <li><a href="https://docs.netbird.io/" target="_blank">NetBird documentation</a></li>
+    <li><a href="https://github.com/netbirdio/netbird" target="_blank">NetBird on GitHub</a></li>
+    <li><a href="https://github.com/netbirdio/netbird-unraid" target="_blank">Plugin source</a></li>
+    <li><a href="https://github.com/netbirdio/netbird-unraid/issues" target="_blank">Report a plugin issue</a></li>
+</ul>
+<?php
+} catch (\Throwable $e) {
+    echo "<div style='background:#fee;padding:12px;border:1px solid #c00;border-radius:4px;'>"
+       . "<b>NetBird plugin error</b><pre>" . htmlspecialchars($e->getMessage() . "\n@ " . $e->getFile() . ':' . $e->getLine()) . "</pre></div>";
+}
+?>

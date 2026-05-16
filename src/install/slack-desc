@@ -1,0 +1,12 @@
+                      |-----handy-ruler------------------------------------------------------|
+unraid-netbird-utils: unraid-netbird-utils (utilities for running NetBird on Unraid)
+unraid-netbird-utils:
+unraid-netbird-utils: This package provides the scripts, rc.d service, and Dynamix WebGUI
+unraid-netbird-utils: pages required to run the NetBird WireGuard-mesh client natively on
+unraid-netbird-utils: Unraid OS as a system plugin.
+unraid-netbird-utils:
+unraid-netbird-utils: NetBird upstream: https://netbird.io
+unraid-netbird-utils: Plugin source:   https://github.com/techhutus/netbird-unraid
+unraid-netbird-utils:
+unraid-netbird-utils:
+unraid-netbird-utils:

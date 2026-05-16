@@ -1,0 +1,173 @@
+Menu="Netbird:1"
+Title="Settings"
+Icon="gears"
+Tag="gears"
+Markdown="true"
+---
+<?php
+try {
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "{$docroot}/plugins/netbird/include/common.php";
+
+$plugin = 'netbird';
+$cfg    = function_exists('parse_plugin_cfg') ? parse_plugin_cfg($plugin) : [];
+
+$enabled       = $cfg['ENABLE_NETBIRD']   ?? '1';
+$mgmtUrl       = $cfg['MANAGEMENT_URL']   ?? '';
+$setupKey      = $cfg['SETUP_KEY']        ?? '';
+$hostname      = $cfg['HOSTNAME']         ?? '';
+$preSharedKey  = $cfg['PRESHARED_KEY']    ?? '';
+$logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
+
+$profiles      = Netbird\listProfiles();
+$activeProf    = Netbird\activeProfile();
+?>
+
+<style>
+    .nb-profile-bar {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px 12px; border: 1px solid var(--panel-bdr);
+        border-radius: 4px; margin-bottom: 14px;
+    }
+    .nb-profile-bar label { margin: 0; font-weight: 600; }
+    .nb-profile-bar select, .nb-profile-bar input[type=text] { margin: 0; min-width: 180px; }
+    .nb-profile-bar input[type=button] { margin: 0; }
+    .nb-profile-empty { color: var(--text-muted, #888); }
+</style>
+
+<div class="nb-profile-bar">
+    <label for="nb-profile-select">_(Profile)_:</label>
+    <?php if ($profiles): ?>
+        <select id="nb-profile-select">
+            <?php foreach ($profiles as $p): ?>
+                <option value="<?=htmlspecialchars($p['name'])?>" <?=$p['active'] ? 'selected' : ''?>>
+                    <?=htmlspecialchars($p['name'])?><?=$p['active'] ? ' (active)' : ''?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <input type="button" value="_(Switch)_" onclick="nbProfile('select', $('#nb-profile-select').val())">
+        <input type="button" value="_(Delete)_" onclick="nbProfileDelete()">
+    <?php else: ?>
+        <span class="nb-profile-empty">No profiles found. Start the daemon and add one below.</span>
+    <?php endif; ?>
+    &nbsp;&nbsp;
+    <input type="text" id="nb-profile-new" placeholder="new-profile-name" maxlength="32">
+    <input type="button" value="_(+ Add)_" onclick="nbProfileAdd()">
+</div>
+
+<blockquote class="inline_help">
+NetBird supports multiple profiles so you can keep separate identities (e.g., a personal NetBird Cloud account and a self-hosted tenant) on the same host. Switching profiles re-runs <code>netbird up</code> against the new profile using the credentials you fill in below.
+</blockquote>
+
+<form markdown="1" method="POST" action="/update.php" target="progressFrame">
+<input type="hidden" name="#file" value="<?=$plugin?>/<?=$plugin?>.cfg">
+<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/netbird/scripts/apply.sh">
+
+_(Enable NetBird)_:
+: <select name="ENABLE_NETBIRD">
+  <?=mk_option($enabled, "1", _("Yes"))?>
+  <?=mk_option($enabled, "0", _("No"))?>
+  </select>
+
+<blockquote class="inline_help">
+Start the NetBird daemon automatically when the array starts. Disabling stops the service on the next apply.
+</blockquote>
+
+_(Active Profile)_:
+: <code><?=htmlspecialchars($activeProf ?: '(none — set one in the bar above)')?></code>
+
+<blockquote class="inline_help">
+The credentials below are applied to whichever profile is currently active. Switch profiles using the picker above.
+</blockquote>
+
+_(Management URL)_:
+: <input type="text" name="MANAGEMENT_URL" value="<?=htmlspecialchars($mgmtUrl)?>" placeholder="https://api.netbird.io (default)">
+
+<blockquote class="inline_help">
+Leave blank to use the public NetBird cloud. Set this to your self-hosted NetBird management server URL.
+</blockquote>
+
+_(Setup Key)_:
+: <input type="password" name="SETUP_KEY" value="<?=htmlspecialchars($setupKey)?>" autocomplete="off">
+
+<blockquote class="inline_help">
+Pre-authentication setup key generated in your NetBird dashboard. Optional — if blank, the Status tab will show an interactive login URL after you click <b>Connect</b>.
+</blockquote>
+
+_(Hostname)_:
+: <input type="text" name="HOSTNAME" value="<?=htmlspecialchars($hostname)?>" placeholder="<?=gethostname()?>">
+
+<blockquote class="inline_help">
+Override the hostname this peer registers as. Defaults to the Unraid server's hostname.
+</blockquote>
+
+_(Pre-shared Key)_:
+: <input type="password" name="PRESHARED_KEY" value="<?=htmlspecialchars($preSharedKey)?>" autocomplete="off">
+
+<blockquote class="inline_help">
+Optional WireGuard pre-shared key. Only required if your NetBird network is configured to use one.
+</blockquote>
+
+_(Log Level)_:
+: <select name="LOG_LEVEL">
+  <?=mk_option($logLevel, "panic", _("Panic"))?>
+  <?=mk_option($logLevel, "fatal", _("Fatal"))?>
+  <?=mk_option($logLevel, "error", _("Error"))?>
+  <?=mk_option($logLevel, "warn",  _("Warn"))?>
+  <?=mk_option($logLevel, "info",  _("Info"))?>
+  <?=mk_option($logLevel, "debug", _("Debug"))?>
+  <?=mk_option($logLevel, "trace", _("Trace"))?>
+  </select>
+
+<blockquote class="inline_help">
+NetBird daemon log verbosity. Written to <code>/var/log/netbird.log</code>.
+</blockquote>
+
+<input type="submit" name="#default" value="_(Default)_">
+: <input type="submit" name="#apply" value="_(Apply)_" disabled><input type="button" value="_(Done)_" onclick="done()">
+</form>
+
+<script>
+var nbCsrfToken = <?= json_encode((@parse_ini_file('/var/local/emhttp/var.ini') ?: [])['csrf_token'] ?? '') ?>;
+
+function nbProfile(action, name, extra) {
+    var data = { action: 'profile-' + action, name: name, csrf_token: nbCsrfToken };
+    if (extra) { $.extend(data, extra); }
+    $.post('/plugins/netbird/include/action.php', data, function(resp){
+        if (resp && resp.message) {
+            swal({ title: resp.title || 'NetBird', text: resp.message, type: resp.type || 'info' });
+        }
+        setTimeout(function(){ location.reload(); }, 1200);
+    }, 'json').fail(function(xhr){
+        swal({ title: 'NetBird error', text: xhr.responseText || 'Request failed', type: 'error' });
+    });
+}
+function nbProfileAdd() {
+    var name = ($('#nb-profile-new').val() || '').trim();
+    if (!name) { swal({ title: 'NetBird', text: 'Enter a profile name first.', type: 'warning' }); return; }
+    if (!/^[A-Za-z0-9_.-]{1,32}$/.test(name)) {
+        swal({ title: 'NetBird', text: 'Profile names: letters, digits, dot, dash, underscore (max 32).', type: 'warning' }); return;
+    }
+    nbProfile('add', name);
+}
+function nbProfileDelete() {
+    var name = $('#nb-profile-select').val();
+    if (!name) { return; }
+    swal({
+        title: 'Delete profile "' + name + '"?',
+        text: 'This removes the profile and its stored credentials on this host. Cannot be undone.',
+        type: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Delete',
+        cancelButtonText: 'Cancel'
+    }, function(confirmed){
+        if (confirmed) { nbProfile('remove', name); }
+    });
+}
+</script>
+<?php
+} catch (\Throwable $e) {
+    echo "<div style='background:#fee;padding:12px;border:1px solid #c00;border-radius:4px;'>"
+       . "<b>NetBird plugin error</b><pre>" . htmlspecialchars($e->getMessage() . "\n@ " . $e->getFile() . ':' . $e->getLine()) . "</pre></div>";
+}
+?>

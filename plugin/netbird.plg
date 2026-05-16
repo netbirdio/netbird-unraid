@@ -1,0 +1,222 @@
+<?xml version='1.0' standalone='yes'?>
+<!DOCTYPE PLUGIN [
+<!ENTITY name        "netbird">
+<!ENTITY author      "NetBird">
+<!ENTITY version     "2026.05.16.0001">
+<!ENTITY launch      "Settings/Netbird">
+<!ENTITY gitUser     "netbirdio">
+<!ENTITY gitRepo     "netbird-unraid">
+<!ENTITY pluginURL   "https://raw.githubusercontent.com/&gitUser;/&gitRepo;/main/plugin/netbird.plg">
+<!ENTITY pluginLOC   "/boot/config/plugins/&name;">
+<!ENTITY emhttpLOC   "/usr/local/emhttp/plugins/&name;">
+
+<!-- NetBird upstream binary -->
+<!ENTITY netbirdVer    "0.71.2">
+<!ENTITY netbirdFile   "netbird_&netbirdVer;_linux_amd64.tar.gz">
+<!ENTITY netbirdURL    "https://github.com/netbirdio/netbird/releases/download/v&netbirdVer;/&netbirdFile;">
+<!ENTITY netbirdSHA256 "2cc49406d2f80bebb865167c219d21e82e10e0d787cefb8dc820102e5d9db4d6">
+
+<!-- Plugin support package (built from src/) -->
+<!ENTITY pkgName       "unraid-netbird-utils">
+<!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
+<!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
+<!ENTITY pkgSHA256     "TODO_FILL_AFTER_FIRST_RELEASE_BUILD">
+]>
+
+<PLUGIN
+  name="&name;"
+  author="&author;"
+  version="&version;"
+  launch="&launch;"
+  pluginURL="&pluginURL;"
+  min="7.0.0"
+  support="https://github.com/&gitUser;/&gitRepo;/issues"
+  project="https://github.com/&gitUser;/&gitRepo;"
+>
+
+<CHANGES>
+<![CDATA[
+
+### 2026.05.16.0001
+
+- Initial preview release. NetBird 0.71.2 running natively on Unraid as a system plugin.
+
+]]>
+</CHANGES>
+
+<!--
+================================================================================
+  Fetch NetBird binary tarball
+================================================================================
+-->
+<FILE Name="&pluginLOC;/&netbirdFile;">
+<URL>&netbirdURL;</URL>
+<SHA256>&netbirdSHA256;</SHA256>
+</FILE>
+
+<!--
+================================================================================
+  Fetch plugin support package (pages, rc.d script, etc.)
+================================================================================
+-->
+<FILE Name="&pluginLOC;/&pkgFile;">
+<URL>&pkgURL;</URL>
+<SHA256>&pkgSHA256;</SHA256>
+</FILE>
+
+<!--
+================================================================================
+  Install script
+================================================================================
+-->
+<FILE Run="/bin/bash">
+<INLINE>
+<![CDATA[
+# Clean any prior in-RAM install of plugin pages
+if [ -d "/usr/local/emhttp/plugins/netbird" ]; then
+    rm -rf /usr/local/emhttp/plugins/netbird
+fi
+
+# Install plugin support package (pages, rc.d script, default config, etc.)
+upgradepkg --install-new /boot/config/plugins/netbird/unraid-netbird-utils-]]>&version;<![CDATA[-noarch-1.txz
+
+# Extract NetBird upstream binary into /usr/local/sbin
+mkdir -p /usr/local/sbin
+tar -xzf /boot/config/plugins/netbird/]]>&netbirdFile;<![CDATA[ -C /tmp/
+install -m 0755 /tmp/netbird /usr/local/sbin/netbird
+rm -f /tmp/netbird /tmp/LICENSE /tmp/README.md
+rm -rf /tmp/LICENSES
+
+# Persist NetBird's two state dirs on the USB flash via symlinks.
+# NetBird writes config/profile data to /etc/netbird and runtime state to /var/lib/netbird.
+mkdir -p /boot/config/plugins/netbird/etc
+mkdir -p /boot/config/plugins/netbird/lib
+
+# Make sure target paths are clear, then link them
+[ -L /etc/netbird ] && rm -f /etc/netbird
+[ -d /etc/netbird ] && rm -rf /etc/netbird
+ln -s /boot/config/plugins/netbird/etc /etc/netbird
+
+[ -L /var/lib/netbird ] && rm -f /var/lib/netbird
+[ -d /var/lib/netbird ] && rm -rf /var/lib/netbird
+ln -s /boot/config/plugins/netbird/lib /var/lib/netbird
+
+# Exclude state dir from Unraid Connect flash backup (state can include auth tokens)
+echo "lib" >> /boot/config/plugins/netbird/.gitignore
+echo "etc/.cache" >> /boot/config/plugins/netbird/.gitignore
+
+# Add wt0 to Unraid's nginx include list so the WebGUI binds to the NetBird IP.
+NEC=/boot/config/network-extra.cfg
+if [ -f "$NEC" ] && grep -q '^include_interfaces=' "$NEC" ; then
+    if ! grep -q 'wt0' "$NEC" ; then
+        sed -i 's/^include_interfaces="\(.*\)"/include_interfaces="\1 wt0"/' "$NEC"
+        sed -i 's/include_interfaces=" /include_interfaces="/' "$NEC"
+        echo "  added wt0 to existing include_interfaces in $NEC"
+    fi
+else
+    cat > "$NEC" <<NEOF
+include_interfaces="wt0"
+exclude_interfaces=""
+NEOF
+    echo "  wrote $NEC with include_interfaces=\"wt0\""
+fi
+
+# Start the daemon, then reload nginx as soon as wt0 appears (so the WebGUI
+# binds to the NetBird IP and is reachable from other peers).
+/usr/local/emhttp/plugins/netbird/restart.sh
+(
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        if ip -4 addr show wt0 >/dev/null 2>&1; then
+            /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+            exit 0
+        fi
+        sleep 2
+    done
+) >/dev/null 2>&1 </dev/null &
+disown 2>/dev/null || true
+
+# Clean up older versions on flash
+rm -f $(ls /boot/config/plugins/netbird/unraid-netbird-utils-*.txz 2>/dev/null | grep -v ']]>&version;<![CDATA[')
+rm -f $(ls /boot/config/plugins/netbird/netbird_*_linux_amd64.tar.gz 2>/dev/null | grep -v ']]>&netbirdFile;<![CDATA[')
+
+# Flash-backup safety warning: NetBird's state dir holds the WireGuard
+# private key, so if it ended up in Unraid Connect's flash backup it's a
+# credential leak risk.
+if [ -d "/boot/.git" ]; then
+    if git --git-dir /boot/.git log --all --name-only --diff-filter=A -- config/plugins/netbird/lib/ 2>/dev/null | grep -q . ; then
+        echo "******************************"
+        echo "*          WARNING           *"
+        echo "******************************"
+        echo ""
+        echo "The NetBird state directory has been backed up to Unraid Connect via Flash backup."
+        echo ""
+        echo "To remove this backup:"
+        echo " 1. Settings -> Management Access"
+        echo " 2. Under Unraid Connect, deactivate flash backup (delete cloud copy)"
+        echo " 3. Reactivate flash backup"
+        /usr/local/emhttp/webGui/scripts/notify -l '/Settings/ManagementAccess' -i 'alert' -e 'NetBird State' -s 'NetBird state backed up to Unraid Connect.' -d 'The NetBird state directory has been backed up to Unraid Connect. This is a potential security risk. From the Management Settings page, deactivate flash backup and delete cloud backups, then reactivate flash backup.'
+    fi
+fi
+
+echo ""
+echo "----------------------------------------------------"
+echo " NetBird ]]>&netbirdVer;<![CDATA[ has been installed."
+echo " Plugin version: ]]>&version;<![CDATA["
+echo "----------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+<!--
+================================================================================
+  Remove script
+================================================================================
+-->
+<FILE Run="/bin/bash" Method="remove">
+<INLINE>
+<![CDATA[
+# Stop the daemon
+/etc/rc.d/rc.netbird stop 2>/dev/null
+
+# Remove binary
+rm -f /usr/local/sbin/netbird
+
+# Remove plugin package
+removepkg unraid-netbird-utils 2>/dev/null
+
+# Drop persistence symlinks (leaves /boot/config/plugins/netbird intact so
+# the user can reinstall without losing their NetBird identity)
+rm -f /etc/netbird
+rm -f /var/lib/netbird
+
+# Strip wt0 from Unraid's nginx include list and reload nginx so it stops
+# trying to bind to the (now-gone) NetBird interface.
+NEC=/boot/config/network-extra.cfg
+if [ -f "$NEC" ] && grep -q 'wt0' "$NEC" ; then
+    sed -i 's/include_interfaces="\([^"]*\)wt0\([^"]*\)"/include_interfaces="\1\2"/' "$NEC"
+    sed -i 's/include_interfaces="[[:space:]]*/include_interfaces="/'  "$NEC"
+    sed -i 's/[[:space:]]*"/"/' "$NEC"
+fi
+( sleep 5 ; /etc/rc.d/rc.nginx reload >/dev/null 2>&1 ) >/dev/null 2>&1 </dev/null &
+disown 2>/dev/null || true
+
+# Remove pages
+rm -rf /usr/local/emhttp/plugins/netbird
+
+# Tarball / package caches on flash
+rm -f /boot/config/plugins/netbird/*.tar.gz
+rm -f /boot/config/plugins/netbird/*.txz
+
+echo ""
+echo "----------------------------------------------------"
+echo " NetBird plugin removed."
+echo " Configuration preserved at /boot/config/plugins/netbird/"
+echo " (delete that directory by hand to fully purge.)"
+echo "----------------------------------------------------"
+echo ""
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>

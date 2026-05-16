@@ -1,0 +1,39 @@
+Menu="Dashboard"
+Title="NetBird"
+Icon="netbird.png"
+Type="php"
+Tabs="false"
+---
+<?php
+try {
+$docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
+require_once "{$docroot}/plugins/netbird/include/common.php";
+
+$running = Netbird\daemonRunning();
+$status  = Netbird\statusJson();
+$ip4     = $status['netbirdIp']   ?? '';
+$ip6     = $status['netbirdIpv6'] ?? '';
+$prof    = $status['profileName'] ?? '';
+$peers   = isset($status['peers']['details']) ? count($status['peers']['details']) : 0;
+$connPeers = (int) ($status['peers']['connected'] ?? 0);
+$mgmtOk  = !empty($status['management']['connected']);
+?>
+<div>
+    <span class="dashboard-tile-title">NetBird</span>
+    <?php if ($running && $mgmtOk): ?>
+        <span style="color:#2eaa2e;">Connected</span>
+        <?php if ($prof): ?> &middot; <?=htmlspecialchars($prof)?><?php endif; ?>
+        <?php if ($ip4): ?>  &middot; <code><?=htmlspecialchars($ip4)?></code><?php endif; ?>
+        <?php if ($ip6): ?>  &middot; <code><?=htmlspecialchars($ip6)?></code><?php endif; ?>
+        <?php if ($peers): ?> &middot; <?=$connPeers?>/<?=$peers?> peer<?=$peers === 1 ? '' : 's'?><?php endif; ?>
+    <?php elseif ($running): ?>
+        <span style="color:#d39e00;">Daemon running, not logged in</span>
+    <?php else: ?>
+        <span style="color:#c8331f;">Stopped</span>
+    <?php endif; ?>
+</div>
+<?php
+} catch (\Throwable $e) {
+    echo "<span class='dashboard-tile-title'>NetBird</span><span style='color:#c8331f;'>plugin error</span>";
+}
+?>
