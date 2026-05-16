@@ -4,9 +4,11 @@ Run [NetBird](https://netbird.io) — the open-source WireGuard mesh VPN — as 
 native Unraid OS plugin. The Unraid host itself becomes a peer on your
 NetBird network. No Docker container, no extra hop.
 
-> ⚠️ Preview release. Validated on Unraid 7.0+. Not yet listed in Community
-> Applications - see [Listing in CA](#listing-in-ca) below for the path to
-> get there.
+<img width="1058" height="559" alt="Screenshot 2026-05-16 at 2 05 12 PM" src="https://github.com/user-attachments/assets/048db37d-7384-4fc8-b42f-ce74df959951" />
+
+
+> ⚠️ Preview release. Validated on Unraid 7.0+. Not yet listed in Community Applications
+>
 
 ## Install
 
