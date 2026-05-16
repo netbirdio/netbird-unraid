@@ -1,0 +1,210 @@
+name: Release
+
+# Manually-triggered release workflow.
+#
+# What it does:
+#   1. Resolves the NetBird upstream version to ship (input or 'latest').
+#   2. Pulls the SHA256 of netbird_<ver>_linux_amd64.tar.gz directly from
+#      github.com/netbirdio/netbird releases.
+#   3. Updates plugin/netbird.plg + plugin/plugin.json with that version + hash.
+#   4. Runs scripts/build.sh to produce dist/*.txz and dist/netbird.plg.
+#   5. Prepends a CHANGES entry with the new plugin version + NetBird version.
+#   6. Commits, tags, pushes, and creates a GitHub Release with the .txz asset.
+#
+# Prereqs (one-time):
+#   - Repo Settings → Actions → General → "Workflow permissions":
+#         Read and write permissions  ✓
+#         Allow GitHub Actions to create and approve pull requests  ✓
+#   - No secrets needed; uses the default GITHUB_TOKEN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      netbird_version:
+        description: 'NetBird version to pin (e.g. 0.71.3, or "latest")'
+        required: false
+        default: 'latest'
+      force:
+        description: 'Force a release even if NetBird version is unchanged'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so the tag check + push work
+
+      - name: Resolve NetBird version
+        id: nb
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          REQ='${{ inputs.netbird_version }}'
+          if [ -z "$REQ" ] || [ "$REQ" = "latest" ]; then
+              TAG=$(gh release view --repo netbirdio/netbird --json tagName --jq .tagName)
+          else
+              # Accept "0.71.3" or "v0.71.3"
+              TAG="${REQ#v}"
+              TAG="v${TAG}"
+          fi
+          VER="${TAG#v}"
+          ASSET="netbird_${VER}_linux_amd64.tar.gz"
+
+          # Pull the digest GitHub already stores for the asset.
+          DIGEST=$(gh release view "$TAG" --repo netbirdio/netbird \
+              --json assets --jq ".assets[] | select(.name == \"$ASSET\") | .digest")
+          if [ -z "$DIGEST" ]; then
+              echo "::error::Asset $ASSET not found in netbirdio/netbird@$TAG"
+              exit 1
+          fi
+          SHA256="${DIGEST#sha256:}"
+
+          # Defense in depth: download + verify locally so we don't trust the API alone.
+          URL="https://github.com/netbirdio/netbird/releases/download/${TAG}/${ASSET}"
+          curl -fsSL -o /tmp/nb.tgz "$URL"
+          ACTUAL=$(sha256sum /tmp/nb.tgz | awk '{print $1}')
+          if [ "$ACTUAL" != "$SHA256" ]; then
+              echo "::error::SHA256 mismatch: API=$SHA256 actual=$ACTUAL"
+              exit 1
+          fi
+          rm -f /tmp/nb.tgz
+
+          echo "tag=$TAG"       >> "$GITHUB_OUTPUT"
+          echo "version=$VER"   >> "$GITHUB_OUTPUT"
+          echo "asset=$ASSET"   >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "url=$URL"       >> "$GITHUB_OUTPUT"
+
+      - name: Detect unchanged upstream
+        id: changed
+        run: |
+          CUR=$(sed -nE 's/.*<!ENTITY netbirdVer\s+"([^"]+)".*/\1/p' plugin/netbird.plg | head -1)
+          echo "current=$CUR" >> "$GITHUB_OUTPUT"
+          if [ "$CUR" = "${{ steps.nb.outputs.version }}" ] && [ "${{ inputs.force }}" != "true" ]; then
+              echo "::notice::NetBird already pinned at $CUR. Re-run with force=true to release anyway."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bail out (unchanged)
+        if: steps.changed.outputs.skip == 'true'
+        run: exit 0
+
+      - name: Update plugin/netbird.plg + plugin/plugin.json
+        if: steps.changed.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          NB_VER='${{ steps.nb.outputs.version }}'
+          NB_SHA='${{ steps.nb.outputs.sha256 }}'
+
+          sed -i -E 's|(<!ENTITY netbirdVer\s+")[^"]+(">)|\1'"$NB_VER"'\2|' plugin/netbird.plg
+          sed -i -E 's|(<!ENTITY netbirdSHA256\s+")[^"]+(">)|\1'"$NB_SHA"'\2|' plugin/netbird.plg
+
+          # plugin.json mirror (documentation only)
+          tmp=$(mktemp)
+          jq --arg v "$NB_VER" --arg s "$NB_SHA" \
+              '.netbirdVersion = $v | .netbirdSHA256 = $s' plugin/plugin.json > "$tmp"
+          mv "$tmp" plugin/plugin.json
+
+          echo "--- updated plugin/netbird.plg ---"
+          grep -E 'netbirdVer|netbirdSHA256' plugin/netbird.plg | head -2
+          echo "--- updated plugin/plugin.json ---"
+          jq '{netbirdVersion, netbirdSHA256}' plugin/plugin.json
+
+      - name: Build .txz + finalized .plg
+        if: steps.changed.outputs.skip != 'true'
+        run: ./scripts/build.sh
+
+      - name: Read new plugin version
+        if: steps.changed.outputs.skip != 'true'
+        id: build
+        run: |
+          PV=$(sed -nE 's/.*<!ENTITY version\s+"([^"]+)".*/\1/p' dist/netbird.plg | head -1)
+          PKG=$(ls dist/unraid-netbird-utils-*.txz | head -1)
+          echo "plugin_version=$PV"       >> "$GITHUB_OUTPUT"
+          echo "pkg_file=$(basename $PKG)" >> "$GITHUB_OUTPUT"
+          echo "pkg_path=$PKG"            >> "$GITHUB_OUTPUT"
+
+      - name: Prepend CHANGES entry
+        if: steps.changed.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          PV='${{ steps.build.outputs.plugin_version }}'
+          NV='${{ steps.nb.outputs.version }}'
+
+          # Insert a new "### PV\n- Update NetBird to NV" block right after the
+          # opening <![CDATA[ of the CHANGES section. Keep historic entries
+          # below intact so the changelog grows over time.
+          python3 - <<'PY' "$PV" "$NV"
+          import re, sys, pathlib
+          pv, nv = sys.argv[1], sys.argv[2]
+          p = pathlib.Path("plugin/netbird.plg")
+          src = p.read_text()
+          entry = f"\n### {pv}\n\n- Update NetBird to {nv}.\n"
+          new = re.sub(
+              r"(<CHANGES>\s*<!\[CDATA\[\s*\n)",
+              lambda m: m.group(1) + entry,
+              src,
+              count=1,
+          )
+          p.write_text(new)
+          PY
+
+          # Re-run build so dist/netbird.plg picks up the new CHANGES block.
+          ./scripts/build.sh >/dev/null
+          echo "--- new CHANGES head ---"
+          sed -n '/<CHANGES>/,/<\/CHANGES>/p' plugin/netbird.plg | head -10
+
+      - name: Stage plg + json for commit
+        if: steps.changed.outputs.skip != 'true'
+        run: |
+          # The finalized .plg in dist/ already has the new version + new
+          # package SHA256 substituted in. Copy it over the source one so
+          # users get accurate pluginURL metadata on update check.
+          cp dist/netbird.plg plugin/netbird.plg
+
+      - name: Commit + tag + push
+        if: steps.changed.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PV='${{ steps.build.outputs.plugin_version }}'
+          NV='${{ steps.nb.outputs.version }}'
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add plugin/netbird.plg plugin/plugin.json
+          git commit -m "release ${PV}: NetBird ${NV}"
+          git tag "${PV}"
+          git push origin HEAD:main
+          git push origin "${PV}"
+
+      - name: Create GitHub Release
+        if: steps.changed.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PV='${{ steps.build.outputs.plugin_version }}'
+          NV='${{ steps.nb.outputs.version }}'
+          PKG='${{ steps.build.outputs.pkg_path }}'
+
+          gh release create "${PV}" "${PKG}" \
+              --title "${PV}" \
+              --notes "NetBird ${NV} · plugin ${PV}
+
+          Install URL:
+          \`https://raw.githubusercontent.com/${{ github.repository }}/main/plugin/netbird.plg\`"
