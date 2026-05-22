@@ -300,10 +300,15 @@ function nbAction(action) {
       : ($('input[name=csrf_token]').val())                 ? 'dom-input' : 'none');
 
     $.post('/plugins/netbird/include/action.php', { action: action, csrf_token: token }, function(data) {
+        var isError = data && (data.type === 'error' || data.type === 'warning');
         if (data && data.message) {
             swal({ title: data.title || 'NetBird', text: data.message, type: data.type || 'info' });
         }
-        setTimeout(function(){ location.reload(); }, 1500);
+        // Only refresh on success; on an error/warning leave the message up so the
+        // user can read it and dismiss it themselves (nothing changed to refresh).
+        if (!isError) {
+            setTimeout(function(){ location.reload(); }, 1500);
+        }
     }, 'json').fail(function(xhr){
         swal({ title: 'NetBird error', text: xhr.responseText || 'Request failed', type: 'error' });
     });
