@@ -39,6 +39,26 @@ function nb_valid_profile_name(string $name): bool
 }
 
 /**
+ * Acquire the apply lock, or emit a "busy" JSON response and return false.
+ * Serializes daemon-mutating actions with each other and with apply.sh so
+ * concurrent ops don't cancel each other.
+ *
+ * @return resource|false
+ */
+function nb_lock_or_busy()
+{
+    $lock = Netbird\nbTryLock();
+    if ($lock === false) {
+        echo json_encode([
+            'type'    => 'warning',
+            'title'   => 'NetBird busy',
+            'message' => 'Another NetBird operation is in progress. Try again in a moment.',
+        ]);
+    }
+    return $lock;
+}
+
+/**
  * Build the argument vector for `netbird up` from a profile's credentials.
  *
  * @param array<string,string> $creds
@@ -71,6 +91,8 @@ function nb_up_args(array $creds): array
 
 switch ($action) {
     case 'up':
+        $lock = nb_lock_or_busy();
+        if ($lock === false) { break; }
         // Ensure the daemon is up (and its socket exists) before connecting,
         // so a fresh install can connect from the GUI without a manual start.
         if (!Netbird\daemonRunning() || !file_exists('/var/run/netbird.sock')) {
@@ -86,7 +108,9 @@ switch ($action) {
             Netbird\nb(['profile', 'select', $active]);
         }
         $creds = $active !== '' ? Netbird\readProfileCfg($active) : [];
-        [$rc, $out] = Netbird\nb(nb_up_args($creds));
+        // Bounded so a failing login's retry/backoff can't hang the request.
+        [$rc, $out] = Netbird\nb(nb_up_args($creds), 90);
+        Netbird\nbUnlock($lock);
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
             'title'   => $rc === 0 ? 'Connecting' : 'NetBird up failed',
@@ -95,7 +119,10 @@ switch ($action) {
         break;
 
     case 'down':
+        $lock = nb_lock_or_busy();
+        if ($lock === false) { break; }
         [$rc, $out] = Netbird\nb(['down']);
+        Netbird\nbUnlock($lock);
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
             'title'   => $rc === 0 ? 'Disconnected' : 'NetBird down failed',
@@ -126,12 +153,15 @@ switch ($action) {
             echo json_encode(['type' => 'error', 'message' => 'Invalid profile name.']);
             break;
         }
+        $lock = nb_lock_or_busy();
+        if ($lock === false) { break; }
         [$rc, $out] = Netbird\nb(['profile', 'add', $name]);
         if ($rc === 0) {
             // Seed an empty credential cfg so the new profile starts blank
             // rather than appearing to inherit another profile's settings.
             Netbird\writeProfileCfg($name, []);
         }
+        Netbird\nbUnlock($lock);
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
             'title'   => $rc === 0 ? 'Profile added' : 'Add failed',
@@ -147,10 +177,13 @@ switch ($action) {
             echo json_encode(['type' => 'error', 'message' => 'Invalid profile name.']);
             break;
         }
+        $lock = nb_lock_or_busy();
+        if ($lock === false) { break; }
         [$rc, $out] = Netbird\nb(['profile', 'remove', $name]);
         if ($rc === 0) {
             Netbird\deleteProfileCfg($name);
         }
+        Netbird\nbUnlock($lock);
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
             'title'   => $rc === 0 ? 'Profile removed' : 'Remove failed',
@@ -165,8 +198,11 @@ switch ($action) {
             echo json_encode(['type' => 'error', 'message' => 'Invalid profile name.']);
             break;
         }
+        $lock = nb_lock_or_busy();
+        if ($lock === false) { break; }
         [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $name]);
         if ($rcSel !== 0) {
+            Netbird\nbUnlock($lock);
             echo json_encode([
                 'type'    => 'error',
                 'title'   => 'Switch failed',
@@ -175,8 +211,10 @@ switch ($action) {
             break;
         }
         // Re-run `up` using THIS profile's own stored credentials, so switching
-        // never connects with another profile's settings.
-        [$rcUp, $outUp] = Netbird\nb(nb_up_args(Netbird\readProfileCfg($name)));
+        // never connects with another profile's settings. Bounded so a failing
+        // login can't hang the request.
+        [$rcUp, $outUp] = Netbird\nb(nb_up_args(Netbird\readProfileCfg($name)), 90);
+        Netbird\nbUnlock($lock);
         echo json_encode([
             'type'    => 'success',
             'title'   => 'Profile switched',
@@ -211,9 +249,22 @@ switch ($action) {
         foreach (Netbird\PROFILE_KEYS as $k) {
             $creds[$k] = (string) ($_POST[$k] ?? '');
         }
+        // Pick how apply.sh should bring the change into effect. NetBird ignores
+        // most setting changes on an already-connected profile, so:
+        //   reregister — mgmt URL / hostname changed (baked at registration).
+        //   reconnect  — pre-shared key changed to a new value (down+up re-applies
+        //                it without a full re-register).
+        //   ensure     — no credential change (plain select+up; no disconnect).
+        // Setup-key-only changes stay 'ensure' (the key is auth material, not an
+        // identity — re-registering on it would needlessly spend a key use).
+        // NOTE: a PSK cannot be *removed* via the CLI — netbird treats an empty
+        // --preshared-key as "leave unchanged" and even remove+add+up retains the
+        // stored value. So clearing the field can't take effect without a full
+        // erase/re-create of the profile; we don't churn the connection trying.
         $mgmtChanged = nb_mgmt_norm($old['MANAGEMENT_URL']) !== nb_mgmt_norm($creds['MANAGEMENT_URL']);
         $hostChanged = strtolower(trim($old['HOSTNAME'])) !== strtolower(trim($creds['HOSTNAME']));
-        $reregister  = ($mgmtChanged || $hostChanged) ? '1' : '0';
+        $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
+        $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : ($pskChanged ? 'reconnect' : 'ensure');
 
         if (!Netbird\writeProfileCfg($name, $creds)) {
             http_response_code(500);
@@ -221,16 +272,27 @@ switch ($action) {
             break;
         }
 
-        // apply.sh selects the profile, ensures the daemon is running, and runs up
-        // (re-registering first when the management URL changed).
+        // apply.sh (backgrounded; it takes the apply lock itself) selects the
+        // profile, ensures the daemon is running, and runs up in the chosen mode.
+        // It records the outcome to RESULT_FILE, which the page polls via
+        // 'apply-status'. We return immediately with a "since" stamp so the
+        // poller only accepts a result newer than this request.
         exec('/usr/local/emhttp/plugins/netbird/scripts/apply.sh '
-            . escapeshellarg($name) . ' ' . escapeshellarg($reregister) . ' > /dev/null 2>&1 &');
+            . escapeshellarg($name) . ' ' . escapeshellarg($mode) . ' > /dev/null 2>&1 &');
         echo json_encode([
-            'type'    => 'success',
+            'type'    => 'info',
             'title'   => 'Settings saved',
-            'message' => "Saved profile '$name' and applying…",
+            'message' => "Saved profile '$name'; applying…",
             'profile' => $name,
+            'pending' => true,
+            'since'   => time(),
         ]);
+        break;
+
+    case 'apply-status':
+        // Last result written by apply.sh, for the Settings page to poll after
+        // a save. {profile, ok:true|false|null, ts, message} or {} if none.
+        echo json_encode(Netbird\readApplyResult() ?? new stdClass());
         break;
 
     default:

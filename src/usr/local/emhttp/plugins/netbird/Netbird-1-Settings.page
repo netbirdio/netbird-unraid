@@ -192,12 +192,43 @@ function nbSaveSettings() {
         csrf_token:     nbCsrfToken
     };
     $.post('/plugins/netbird/include/action.php', data, function(resp){
-        if (resp && resp.message) {
+        if (resp && resp.pending) {
+            // apply.sh runs in the background; poll for its result so we can
+            // report success/failure instead of blindly reloading.
+            swal({ title: 'Applying…', text: resp.message || 'Applying NetBird settings…',
+                   type: 'info', showConfirmButton: false });
+            nbPollApply(profile, resp.since || 0, 48);
+        } else if (resp && resp.message) {
             swal({ title: resp.title || 'NetBird', text: resp.message, type: resp.type || 'info' });
+            setTimeout(function(){ nbReloadTo(resp && resp.profile); }, 1200);
+        } else {
+            setTimeout(function(){ nbReloadTo(profile); }, 1200);
         }
-        setTimeout(function(){ nbReloadTo(resp && resp.profile); }, 1200);
     }, 'json').fail(function(xhr){
         swal({ title: 'NetBird error', text: xhr.responseText || 'Request failed', type: 'error' });
+    });
+}
+// Poll apply-status until apply.sh reports a result for this profile newer than
+// `since` (ok === true/false), or we run out of tries (~96s), then reload.
+function nbPollApply(profile, since, triesLeft) {
+    $.post('/plugins/netbird/include/action.php', { action: 'apply-status', csrf_token: nbCsrfToken }, function(res){
+        var done = res && res.profile === profile && res.ts >= since && (res.ok === true || res.ok === false);
+        if (done) {
+            swal(res.ok
+                ? { title: 'Connected', text: res.message || 'Applied.', type: 'success' }
+                : { title: 'Apply failed', text: res.message || 'Could not apply settings.', type: 'error' });
+            setTimeout(function(){ nbReloadTo(profile); }, 1500);
+            return;
+        }
+        if (triesLeft <= 0) {
+            swal({ title: 'Still applying', text: 'NetBird is still working in the background. Reloading…', type: 'info' });
+            setTimeout(function(){ nbReloadTo(profile); }, 1500);
+            return;
+        }
+        setTimeout(function(){ nbPollApply(profile, since, triesLeft - 1); }, 2000);
+    }, 'json').fail(function(){
+        if (triesLeft <= 0) { nbReloadTo(profile); return; }
+        setTimeout(function(){ nbPollApply(profile, since, triesLeft - 1); }, 2000);
     });
 }
 function nbProfileDelete() {

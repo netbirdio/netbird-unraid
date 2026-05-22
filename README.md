@@ -1,14 +1,12 @@
+> ⚠️ Preview release. Validated on Unraid 7.0+. Not yet listed in Community Applications.
+
 # NetBird for Unraid
 
-Run [NetBird](https://netbird.io) — the open-source WireGuard mesh VPN — as a
+Run [NetBird](https://netbird.io), the open-source WireGuard mesh VPN, as a
 native Unraid OS plugin. The Unraid host itself becomes a peer on your
 NetBird network. No Docker container, no extra hop.
 
 <img width="1058" height="559" alt="Screenshot 2026-05-16 at 2 05 12 PM" src="https://github.com/user-attachments/assets/048db37d-7384-4fc8-b42f-ce74df959951" />
-
-
-> ⚠️ Preview release. Validated on Unraid 7.0+. Not yet listed in Community Applications
->
 
 ## Install
 
@@ -27,6 +25,8 @@ Then open **Settings → Netbird** to configure.
 - Dynamix WebGUI pages: **Settings**, **Status**, **Info** + a Dashboard tile
 - Persistent identity and config on the USB flash drive, so reboots don't
   forget who this peer is
+- Multiple **profiles** (for example a self-hosted tenant and NetBird Cloud)
+  that you can switch between from the Settings page
 
 ## How it works
 
@@ -48,6 +48,16 @@ plain init, so this plugin:
 
 5. Adds an array-start event hook so the daemon comes up whenever the array
    starts.
+
+## Notes
+
+A few NetBird behaviors are worth knowing when editing a profile:
+
+- Changing a profile's **management URL or hostname** re-registers the peer. It
+  gets a new identity and IP, and the old peer lingers in your NetBird
+  dashboard until you delete it there.
+- A **pre-shared key can be set or changed but not cleared** from the UI.
+  Removing it requires erasing the profile and setting it up again.
 
 ## Building locally
 

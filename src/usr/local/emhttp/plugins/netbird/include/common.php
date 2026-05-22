@@ -12,18 +12,32 @@ const CFG_FILE        = '/boot/config/plugins/netbird/netbird.cfg';
 const PROFILE_DIR     = '/boot/config/plugins/netbird/profiles';
 const DAEMON_ADDR     = 'unix:///var/run/netbird.sock';
 
+// Advisory lock serializing daemon-mutating ops (apply.sh + the connect/profile
+// actions) so concurrent runs can't cancel each other. Shared with apply.sh via
+// flock(2), which PHP flock() and flock(1) both use on Linux.
+const LOCK_FILE       = '/var/run/netbird-apply.lock';
+
+// Where apply.sh records the outcome of the last apply, for UI feedback.
+const RESULT_FILE     = '/var/run/netbird-apply-result.json';
+
 // Credential keys stored per profile (the rest of netbird.cfg is daemon-global).
 const PROFILE_KEYS    = ['MANAGEMENT_URL', 'SETUP_KEY', 'HOSTNAME', 'PRESHARED_KEY'];
 
 /**
  * Run a netbird CLI subcommand and return [exitCode, stdout].
+ * When $timeoutSec > 0 the command is wrapped in timeout(1) so a hung call
+ * (e.g. `up` retrying login) can't block the web request indefinitely; a
+ * timeout surfaces as exit code 124.
  *
  * @param string[] $args
  * @return array{0:int,1:string}
  */
-function nb(array $args): array
+function nb(array $args, int $timeoutSec = 0): array
 {
     $cmd = escapeshellcmd(NETBIRD_BIN) . ' ' . implode(' ', array_map('escapeshellarg', $args)) . ' 2>&1';
+    if ($timeoutSec > 0) {
+        $cmd = 'timeout ' . $timeoutSec . ' ' . $cmd;
+    }
     $out = [];
     $rc  = 0;
     exec($cmd, $out, $rc);
@@ -52,6 +66,59 @@ function daemonRunning(): bool
 {
     exec('/usr/bin/pgrep -f "^' . NETBIRD_BIN . ' service run" 2>/dev/null', $out, $rc);
     return $rc === 0;
+}
+
+/**
+ * Acquire the advisory apply lock, waiting up to $waitSec for it.
+ * Returns the held file handle (pass to nbUnlock) or false if it couldn't be
+ * acquired in time. Best-effort: if the lock file can't be opened at all we
+ * return a sentinel handle so callers still proceed (locking is advisory).
+ *
+ * @return resource|false
+ */
+function nbTryLock(int $waitSec = 8)
+{
+    $fh = @fopen(LOCK_FILE, 'c');
+    if ($fh === false) {
+        return false;
+    }
+    $deadline = microtime(true) + $waitSec;
+    do {
+        if (flock($fh, LOCK_EX | LOCK_NB)) {
+            return $fh;
+        }
+        usleep(200000); // 0.2s
+    } while (microtime(true) < $deadline);
+
+    fclose($fh);
+    return false;
+}
+
+/**
+ * Release a lock handle obtained from nbTryLock().
+ *
+ * @param resource $fh
+ */
+function nbUnlock($fh): void
+{
+    if (is_resource($fh)) {
+        flock($fh, LOCK_UN);
+        fclose($fh);
+    }
+}
+
+/**
+ * Read the last apply result written by apply.sh, or null if none/unreadable.
+ *
+ * @return array<string,mixed>|null
+ */
+function readApplyResult(): ?array
+{
+    if (!is_readable(RESULT_FILE)) {
+        return null;
+    }
+    $decoded = json_decode((string) file_get_contents(RESULT_FILE), true);
+    return is_array($decoded) ? $decoded : null;
 }
 
 /**
