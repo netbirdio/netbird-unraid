@@ -5,6 +5,6 @@
   "min": "7.0.0",
   "support": "https://github.com/netbirdio/netbird-unraid/issues",
   "launch": "Settings/Netbird",
-  "netbirdVersion": "0.71.2",
-  "netbirdSHA256": "2cc49406d2f80bebb865167c219d21e82e10e0d787cefb8dc820102e5d9db4d6"
+  "netbirdVersion": "0.71.4",
+  "netbirdSHA256": "a7c55f50cafb4034425135253f96a6028edfceb723d09e260bb16eaf4c5a82c3"
 }

@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.05.16.0001">
+<!ENTITY version     "2026.05.22.0233">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -11,16 +11,16 @@
 <!ENTITY emhttpLOC   "/usr/local/emhttp/plugins/&name;">
 
 <!-- NetBird upstream binary -->
-<!ENTITY netbirdVer    "0.71.2">
+<!ENTITY netbirdVer    "0.71.4">
 <!ENTITY netbirdFile   "netbird_&netbirdVer;_linux_amd64.tar.gz">
 <!ENTITY netbirdURL    "https://github.com/netbirdio/netbird/releases/download/v&netbirdVer;/&netbirdFile;">
-<!ENTITY netbirdSHA256 "2cc49406d2f80bebb865167c219d21e82e10e0d787cefb8dc820102e5d9db4d6">
+<!ENTITY netbirdSHA256 "a7c55f50cafb4034425135253f96a6028edfceb723d09e260bb16eaf4c5a82c3">
 
 <!-- Plugin support package (built from src/) -->
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "TODO_FILL_AFTER_FIRST_RELEASE_BUILD">
+<!ENTITY pkgSHA256     "c2e3217cf63b86cede5ab68ceb51ab3386062ebf5171f2b68ead9d091fcc70c5">
 ]>
 
 <PLUGIN
@@ -37,6 +37,10 @@
 <CHANGES>
 <![CDATA[
 
+
+### 2026.05.22.0233
+
+- Update NetBird to 0.71.4.
 ### 2026.05.16.0001
 
 - Initial preview release. NetBird 0.71.2 running natively on Unraid as a system plugin.
