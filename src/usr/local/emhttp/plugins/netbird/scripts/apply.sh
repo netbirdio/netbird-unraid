@@ -70,6 +70,8 @@ if [ "$ENABLE_NETBIRD" = "0" ] || [ "$ENABLE_NETBIRD" = "false" ]; then
 fi
 
 # Per-profile credentials (override any legacy values sourced from the global cfg).
+# A setup key is only needed to register (enforced by action.php's save on initial
+# setup / re-register); reconnects reuse the stored identity, so no key guard here.
 MANAGEMENT_URL="" ; SETUP_KEY="" ; HOSTNAME="" ; PRESHARED_KEY=""
 if [ -f "$PROFILE_CFG" ]; then
     # shellcheck disable=SC1090

@@ -3,7 +3,9 @@
  * AJAX endpoint for the Status and Settings pages.
  *
  * Actions:
- *   up              — netbird up (uses cfg credentials if set)
+ *   up              — netbird up using the active profile's stored credentials
+ *                     (reconnects via stored identity; registration via setup
+ *                     key happens on save, interactive SSO is never used)
  *   down            — netbird down
  *   restart         — restart the rc.d daemon
  *   profile-list    — return list of profiles as JSON (rarely needed; pages embed)
@@ -108,7 +110,9 @@ switch ($action) {
             Netbird\nb(['profile', 'select', $active]);
         }
         $creds = $active !== '' ? Netbird\readProfileCfg($active) : [];
-        // Bounded so a failing login's retry/backoff can't hang the request.
+        // Reconnect uses the profile's stored identity; no setup key needed here
+        // (a key is only required to register, which happens on save). Bounded so
+        // a failing reconnect's retry/backoff can't hang the request.
         [$rc, $out] = Netbird\nb(nb_up_args($creds), 90);
         Netbird\nbUnlock($lock);
         echo json_encode([
@@ -212,7 +216,7 @@ switch ($action) {
         }
         // Re-run `up` using THIS profile's own stored credentials, so switching
         // never connects with another profile's settings. Bounded so a failing
-        // login can't hang the request.
+        // reconnect can't hang the request.
         [$rcUp, $outUp] = Netbird\nb(nb_up_args(Netbird\readProfileCfg($name)), 90);
         Netbird\nbUnlock($lock);
         echo json_encode([
@@ -265,6 +269,23 @@ switch ($action) {
         $hostChanged = strtolower(trim($old['HOSTNAME'])) !== strtolower(trim($creds['HOSTNAME']));
         $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
         $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : ($pskChanged ? 'reconnect' : 'ensure');
+
+        // A setup key is required only when the peer is (re)registering — initial
+        // setup (no key was ever stored for this profile) or a re-register
+        // triggered by a management URL / hostname change. Reconnecting an
+        // already-registered profile reuses its stored identity and needs no key,
+        // and we never fall back to interactive SSO.
+        $everConfigured = trim($old['SETUP_KEY']) !== '';
+        $registering    = !$everConfigured || $mode === 'reregister';
+        if ($registering && trim($creds['SETUP_KEY']) === '') {
+            http_response_code(400);
+            echo json_encode([
+                'type'    => 'error',
+                'title'   => 'Setup key required',
+                'message' => 'A setup key is required to register this profile. Generate one in your NetBird dashboard and paste it here.',
+            ]);
+            break;
+        }
 
         if (!Netbird\writeProfileCfg($name, $creds)) {
             http_response_code(500);

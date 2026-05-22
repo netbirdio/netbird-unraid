@@ -104,7 +104,7 @@ _(Setup Key)_:
 : <input type="password" name="SETUP_KEY" value="<?=htmlspecialchars($setupKey)?>" autocomplete="off">
 
 <blockquote class="inline_help">
-Pre-authentication setup key generated in your NetBird dashboard. Optional — if blank, the Status tab will show an interactive login URL after you click <b>Connect</b>.
+Pre-authentication setup key from your NetBird dashboard. Required the first time you register a profile, and after changing the management URL or hostname (which re-registers the peer). Reconnecting an already-registered profile does not need it. This plugin always registers with a setup key; interactive SSO login is not used.
 </blockquote>
 
 _(Hostname)_:
@@ -180,6 +180,17 @@ function nbViewProfile(name) {
 function nbSaveSettings() {
     var profile = $('#nb-edit-profile').val();
     var form = document.getElementById('nb-settings-form');
+    // A setup key is required only when registering: a profile that has no key
+    // stored yet (initial setup). Reconnecting an already-registered profile
+    // doesn't need one. (A management-URL/hostname change also re-registers; the
+    // server enforces that case and returns a clear error if the key is missing.)
+    var nbRequireKey = <?= empty($setupKey) ? 'true' : 'false' ?>;
+    if (nbRequireKey && !($('input[name=SETUP_KEY]', form).val() || '').trim()) {
+        swal({ title: 'Setup key required',
+               text: 'Enter a setup key from your NetBird dashboard to register this profile. Interactive SSO login is not supported.',
+               type: 'warning' });
+        return;
+    }
     var data = {
         action:         'save',
         name:           profile,
