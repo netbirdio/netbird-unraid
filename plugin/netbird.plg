@@ -176,11 +176,21 @@ echo ""
 <FILE Run="/bin/bash" Method="remove">
 <INLINE>
 <![CDATA[
-# Stop the daemon
+# Stop the daemon (graceful), then make sure nothing lingers
 /etc/rc.d/rc.netbird stop 2>/dev/null
+/usr/local/sbin/netbird down >/dev/null 2>&1
+pkill -f '/usr/local/sbin/netbird service run' 2>/dev/null
+sleep 1
+pkill -9 -f '/usr/local/sbin/netbird service run' 2>/dev/null
+rm -f /var/run/netbird.sock /var/run/netbird.pid
 
-# Remove binary
+# Tear down the WireGuard interface if it's still up
+ip link delete wt0 2>/dev/null
+
+# Remove binary (default path plus any stray copy still on PATH)
 rm -f /usr/local/sbin/netbird
+for b in $(command -v netbird 2>/dev/null); do rm -f "$b"; done
+hash -r 2>/dev/null
 
 # Remove plugin package
 removepkg unraid-netbird-utils 2>/dev/null
