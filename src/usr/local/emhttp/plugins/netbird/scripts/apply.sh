@@ -147,7 +147,8 @@ UP_ARGS="up"
 [ -n "$HOSTNAME" ]       && UP_ARGS="$UP_ARGS --hostname $HOSTNAME"
 [ -n "$PRESHARED_KEY" ]  && UP_ARGS="$UP_ARGS --preshared-key $PRESHARED_KEY"
 # NetBird's built-in SSH server (host-wide global toggle from netbird.cfg).
-[ "$ENABLE_SSH" = "1" ]  && UP_ARGS="$UP_ARGS --allow-server-ssh"
+# Unraid is root-operated, so also permit root login (refused otherwise).
+[ "$ENABLE_SSH" = "1" ]  && UP_ARGS="$UP_ARGS --allow-server-ssh --enable-ssh-root"
 
 log "Running: netbird up (profile '$PROFILE', mode '$MODE')"
 OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)

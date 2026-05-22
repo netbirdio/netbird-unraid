@@ -99,8 +99,13 @@ function nb_up_args(array $creds): array
     if (!empty($creds['SETUP_KEY']))       { $args[] = '--setup-key';      $args[] = $creds['SETUP_KEY']; }
     if (!empty($creds['HOSTNAME']))        { $args[] = '--hostname';       $args[] = $creds['HOSTNAME']; }
     if (!empty($creds['PRESHARED_KEY']))   { $args[] = '--preshared-key';  $args[] = $creds['PRESHARED_KEY']; }
-    // NetBird's built-in SSH server is a host-wide (global) setting.
-    if ((Netbird\readCfg()['ENABLE_SSH'] ?? '0') === '1') { $args[] = '--allow-server-ssh'; }
+    // NetBird's built-in SSH server is a host-wide (global) setting. Unraid is a
+    // root-operated box, so we also permit root login (the server refuses it
+    // otherwise); without this the SSH server is effectively unusable here.
+    if ((Netbird\readCfg()['ENABLE_SSH'] ?? '0') === '1') {
+        $args[] = '--allow-server-ssh';
+        $args[] = '--enable-ssh-root';
+    }
     return $args;
 }
 

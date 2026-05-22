@@ -144,7 +144,7 @@ _(Enable NetBird SSH)_:
   </select>
 
 <blockquote class="inline_help">
-Runs NetBird's built-in SSH server so other peers can SSH into this Unraid host using NetBird identity (no separate SSH keys to manage). <b>Security:</b> this exposes SSH to any peer your NetBird access controls permit, so leave it disabled unless you need it. SSH must also be enabled for this peer in the NetBird dashboard. Changing this reconnects NetBird to take effect.
+Runs NetBird's built-in SSH server so other peers can SSH into this Unraid host as <code>root</code> using NetBird identity (no separate SSH keys to manage). <b>Security:</b> this grants root SSH to any peer your NetBird access controls permit, so leave it disabled unless you need it. You must also enable SSH for this peer and create an access control policy in the NetBird dashboard — see <a href="https://docs.netbird.io/manage/peers/ssh#step-2-create-access-control-policy" target="_blank" rel="noopener noreferrer">the NetBird SSH guide</a>. Changing this reconnects NetBird to take effect.
 </blockquote>
 
 : <input type="button" value="_(Apply)_" onclick="nbSaveSettings()"><input type="button" value="_(Done)_" onclick="done()">
