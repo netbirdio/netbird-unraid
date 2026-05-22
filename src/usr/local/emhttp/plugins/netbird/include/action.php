@@ -41,6 +41,17 @@ function nb_valid_profile_name(string $name): bool
 }
 
 /**
+ * True when a profile has never been registered through the plugin. Save keeps
+ * a profile's setup key once set (an empty field means "keep existing"), so
+ * "no stored setup key" reliably means "never set up". Bringing such a profile
+ * up would fall into NetBird's interactive SSO login, which we don't use.
+ */
+function nb_profile_unconfigured(string $name): bool
+{
+    return trim(Netbird\readProfileCfg($name)['SETUP_KEY'] ?? '') === '';
+}
+
+/**
  * Acquire the apply lock, or emit a "busy" JSON response and return false.
  * Serializes daemon-mutating actions with each other and with apply.sh so
  * concurrent ops don't cancel each other.
@@ -109,7 +120,19 @@ switch ($action) {
         if ($active !== '') {
             Netbird\nb(['profile', 'select', $active]);
         }
-        $creds = $active !== '' ? Netbird\readProfileCfg($active) : [];
+        // Refuse to connect a profile that was never registered (no stored key) —
+        // `up` would otherwise drop into interactive SSO login, which we don't use.
+        if ($active === '' || nb_profile_unconfigured($active)) {
+            Netbird\nbUnlock($lock);
+            echo json_encode([
+                'type'    => 'error',
+                'title'   => 'Profile not set up',
+                'message' => ($active === '' ? 'No active profile. ' : "Profile '$active' hasn't been registered yet. ")
+                           . 'Open the Settings tab, enter a setup key, and save to register it.',
+            ]);
+            break;
+        }
+        $creds = Netbird\readProfileCfg($active);
         // Reconnect uses the profile's stored identity; no setup key needed here
         // (a key is only required to register, which happens on save). Bounded so
         // a failing reconnect's retry/backoff can't hang the request.
@@ -204,6 +227,17 @@ switch ($action) {
         }
         $lock = nb_lock_or_busy();
         if ($lock === false) { break; }
+        // Refuse to switch to a never-registered profile (no stored key); the
+        // follow-up `up` would otherwise fall into interactive SSO login.
+        if (nb_profile_unconfigured($name)) {
+            Netbird\nbUnlock($lock);
+            echo json_encode([
+                'type'    => 'error',
+                'title'   => 'Profile not set up',
+                'message' => "Profile '$name' hasn't been registered yet. Open the Settings tab, enter a setup key, and save to register it.",
+            ]);
+            break;
+        }
         [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $name]);
         if ($rcSel !== 0) {
             Netbird\nbUnlock($lock);
@@ -270,11 +304,14 @@ switch ($action) {
         $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
         $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : ($pskChanged ? 'reconnect' : 'ensure');
 
-        // A setup key is required only when the peer is (re)registering — initial
-        // setup (no key was ever stored for this profile) or a re-register
-        // triggered by a management URL / hostname change. Reconnecting an
-        // already-registered profile reuses its stored identity and needs no key,
-        // and we never fall back to interactive SSO.
+        // An empty Setup Key field means "keep the stored key" — the key is only
+        // consumed at registration, so a profile never loses it once set. That
+        // keeps "has a stored key" a reliable "has been registered" signal for the
+        // up/switch guards above. A key is mandatory only when (re)registering:
+        // initial setup, or a re-register from a management-URL/hostname change.
+        if (trim($creds['SETUP_KEY']) === '' && trim($old['SETUP_KEY']) !== '') {
+            $creds['SETUP_KEY'] = $old['SETUP_KEY'];
+        }
         $everConfigured = trim($old['SETUP_KEY']) !== '';
         $registering    = !$everConfigured || $mode === 'reregister';
         if ($registering && trim($creds['SETUP_KEY']) === '') {
