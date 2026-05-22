@@ -18,6 +18,11 @@ name: Release
 #   - No secrets needed; uses the default GITHUB_TOKEN.
 
 on:
+  # Daily check for a new NetBird upstream release. The "Detect unchanged" step
+  # below skips the build/commit/release unless the resolved version differs
+  # from what's pinned, so this is a no-op on days with no upstream release.
+  schedule:
+    - cron: '0 7 * * *'
   workflow_dispatch:
     inputs:
       netbird_version:
