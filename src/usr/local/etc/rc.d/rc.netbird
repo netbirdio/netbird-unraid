@@ -48,6 +48,17 @@ start_netbird() {
         --log-file "$LOGFILE" \
         $EXTRA_ARGS >>"$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
+
+    # Wait for the daemon socket so callers (netbird up, apply) don't race startup.
+    for _ in $(seq 1 20); do
+        [ -S /var/run/netbird.sock ] && break
+        sleep 0.5
+    done
+    if [ -S /var/run/netbird.sock ]; then
+        log "NetBird daemon socket is up."
+    else
+        log "WARNING: netbird.sock did not appear within 10s; check $LOGFILE."
+    fi
 }
 
 stop_netbird() {

@@ -125,9 +125,10 @@ NEOF
     echo "  wrote $NEC with include_interfaces=\"wt0\""
 fi
 
-# Start the daemon, then reload nginx as soon as wt0 appears (so the WebGUI
-# binds to the NetBird IP and is reachable from other peers).
-/usr/local/emhttp/plugins/netbird/restart.sh
+# Start the daemon synchronously (waits for the socket), then reload nginx as
+# soon as wt0 appears (so the WebGUI binds to the NetBird IP and is reachable
+# from other peers).
+/etc/rc.d/rc.netbird start
 (
     for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
         if ip -4 addr show wt0 >/dev/null 2>&1; then

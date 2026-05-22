@@ -56,6 +56,15 @@ function nb_up_args(array $cfg): array
 
 switch ($action) {
     case 'up':
+        // Ensure the daemon is up (and its socket exists) before connecting,
+        // so a fresh install can connect from the GUI without a manual start.
+        if (!Netbird\daemonRunning() || !file_exists('/var/run/netbird.sock')) {
+            exec('/etc/rc.d/rc.netbird start > /dev/null 2>&1');
+            for ($i = 0; $i < 20; $i++) {
+                if (file_exists('/var/run/netbird.sock')) { break; }
+                usleep(500000);
+            }
+        }
         [$rc, $out] = Netbird\nb(nb_up_args($cfg));
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
