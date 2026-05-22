@@ -81,7 +81,7 @@ The credentials below are applied to whichever profile is currently active. Swit
 </blockquote>
 
 _(Management URL)_:
-: <input type="text" name="MANAGEMENT_URL" value="<?=htmlspecialchars($mgmtUrl)?>" placeholder="https://api.netbird.io (default)">
+: <input type="url" name="MANAGEMENT_URL" value="<?=htmlspecialchars($mgmtUrl)?>" placeholder="https://api.netbird.io (default)" autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other">
 
 <blockquote class="inline_help">
 Leave blank to use the public NetBird cloud. Set this to your self-hosted NetBird management server URL.
