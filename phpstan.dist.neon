@@ -1,0 +1,9 @@
+parameters:
+    level: 5
+    paths:
+        - src
+    fileExtensions:
+        - php
+        - page
+    bootstrapFiles:
+        - phpstan-stubs/unraid.php

@@ -1,0 +1,28 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  php-cs-fixer:
+    name: PHP-CS-Fixer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP-CS-Fixer (dry run)
+        uses: docker://oskarstark/php-cs-fixer-ga
+        with:
+          args: --config=.php-cs-fixer.dist.php --diff --dry-run
+
+  phpstan:
+    name: PHPStan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHPStan
+        uses: docker://ghcr.io/phpstan/phpstan
+        with:
+          args: analyse -c phpstan.dist.neon --no-progress
