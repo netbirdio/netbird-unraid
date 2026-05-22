@@ -99,6 +99,8 @@ function nb_up_args(array $creds): array
     if (!empty($creds['SETUP_KEY']))       { $args[] = '--setup-key';      $args[] = $creds['SETUP_KEY']; }
     if (!empty($creds['HOSTNAME']))        { $args[] = '--hostname';       $args[] = $creds['HOSTNAME']; }
     if (!empty($creds['PRESHARED_KEY']))   { $args[] = '--preshared-key';  $args[] = $creds['PRESHARED_KEY']; }
+    // NetBird's built-in SSH server is a host-wide (global) setting.
+    if ((Netbird\readCfg()['ENABLE_SSH'] ?? '0') === '1') { $args[] = '--allow-server-ssh'; }
     return $args;
 }
 
@@ -275,7 +277,11 @@ switch ($action) {
         if (!in_array($log, ['panic', 'fatal', 'error', 'warn', 'info', 'debug', 'trace'], true)) {
             $log = 'info';
         }
-        Netbird\writeGlobalCfg(['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log]);
+        // NetBird SSH server is a global (host-wide) toggle; changing it requires a
+        // reconnect to take effect (see the mode selection below).
+        $sshWas = (Netbird\readCfg()['ENABLE_SSH'] ?? '0') === '1';
+        $ssh    = (($_POST['ENABLE_SSH'] ?? '0') === '1') ? '1' : '0';
+        Netbird\writeGlobalCfg(['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh]);
 
         // Detect a registration-parameter change BEFORE overwriting the stored
         // cfg. NetBird bakes the management URL and hostname into the profile at
@@ -302,7 +308,8 @@ switch ($action) {
         $mgmtChanged = nb_mgmt_norm($old['MANAGEMENT_URL']) !== nb_mgmt_norm($creds['MANAGEMENT_URL']);
         $hostChanged = strtolower(trim($old['HOSTNAME'])) !== strtolower(trim($creds['HOSTNAME']));
         $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
-        $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : ($pskChanged ? 'reconnect' : 'ensure');
+        $sshChanged  = $sshWas !== ($ssh === '1');
+        $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged) ? 'reconnect' : 'ensure');
 
         // An empty Setup Key field means "keep the stored key" — the key is only
         // consumed at registration, so a profile never loses it once set. That

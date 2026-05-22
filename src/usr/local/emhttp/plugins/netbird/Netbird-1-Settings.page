@@ -14,6 +14,7 @@ $cfg    = function_exists('parse_plugin_cfg') ? parse_plugin_cfg($plugin) : [];
 
 // Global daemon options live in netbird.cfg.
 $enabled       = $cfg['ENABLE_NETBIRD']   ?? '1';
+$enableSsh     = $cfg['ENABLE_SSH']       ?? '0';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
 
 $profiles      = Netbird\listProfiles();
@@ -136,6 +137,16 @@ _(Log Level)_:
 NetBird daemon log verbosity. Written to <code>/var/log/netbird.log</code>.
 </blockquote>
 
+_(Enable NetBird SSH)_:
+: <select name="ENABLE_SSH">
+  <?=mk_option($enableSsh, "0", _("No"))?>
+  <?=mk_option($enableSsh, "1", _("Yes"))?>
+  </select>
+
+<blockquote class="inline_help">
+Runs NetBird's built-in SSH server so other peers can SSH into this Unraid host using NetBird identity (no separate SSH keys to manage). <b>Security:</b> this exposes SSH to any peer your NetBird access controls permit, so leave it disabled unless you need it. SSH must also be enabled for this peer in the NetBird dashboard. Changing this reconnects NetBird to take effect.
+</blockquote>
+
 : <input type="button" value="_(Apply)_" onclick="nbSaveSettings()"><input type="button" value="_(Done)_" onclick="done()">
 </form>
 
@@ -195,6 +206,7 @@ function nbSaveSettings() {
         action:         'save',
         name:           profile,
         ENABLE_NETBIRD: $('select[name=ENABLE_NETBIRD]', form).val(),
+        ENABLE_SSH:     $('select[name=ENABLE_SSH]', form).val(),
         LOG_LEVEL:      $('select[name=LOG_LEVEL]', form).val(),
         MANAGEMENT_URL: $('input[name=MANAGEMENT_URL]', form).val(),
         SETUP_KEY:      $('input[name=SETUP_KEY]', form).val(),
