@@ -12,15 +12,29 @@ require_once "{$docroot}/plugins/netbird/include/common.php";
 $plugin = 'netbird';
 $cfg    = function_exists('parse_plugin_cfg') ? parse_plugin_cfg($plugin) : [];
 
+// Global daemon options live in netbird.cfg.
 $enabled       = $cfg['ENABLE_NETBIRD']   ?? '1';
-$mgmtUrl       = $cfg['MANAGEMENT_URL']   ?? '';
-$setupKey      = $cfg['SETUP_KEY']        ?? '';
-$hostname      = $cfg['HOSTNAME']         ?? '';
-$preSharedKey  = $cfg['PRESHARED_KEY']    ?? '';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
 
 $profiles      = Netbird\listProfiles();
 $activeProf    = Netbird\activeProfile();
+
+// Which profile's credentials is the form editing? ?nbprofile= wins, then the
+// active profile, then "default" (NetBird's built-in profile).
+$editProf = (string) ($_GET['nbprofile'] ?? '');
+if (!Netbird\validProfileName($editProf)) {
+    $editProf = '';
+}
+if ($editProf === '') {
+    $editProf = $activeProf !== '' ? $activeProf : 'default';
+}
+
+// Credentials are stored per profile (profiles/<name>.cfg), not globally.
+$creds         = Netbird\readProfileCfg($editProf);
+$mgmtUrl       = $creds['MANAGEMENT_URL'];
+$setupKey      = $creds['SETUP_KEY'];
+$hostname      = $creds['HOSTNAME'];
+$preSharedKey  = $creds['PRESHARED_KEY'];
 ?>
 
 <style>
@@ -38,9 +52,9 @@ $activeProf    = Netbird\activeProfile();
 <div class="nb-profile-bar">
     <label for="nb-profile-select">_(Profile)_:</label>
     <?php if ($profiles): ?>
-        <select id="nb-profile-select">
+        <select id="nb-profile-select" onchange="nbViewProfile(this.value)">
             <?php foreach ($profiles as $p): ?>
-                <option value="<?=htmlspecialchars($p['name'])?>" <?=$p['active'] ? 'selected' : ''?>>
+                <option value="<?=htmlspecialchars($p['name'])?>" <?=$p['name'] === $editProf ? 'selected' : ''?>>
                     <?=htmlspecialchars($p['name'])?><?=$p['active'] ? ' (active)' : ''?>
                 </option>
             <?php endforeach; ?>
@@ -48,7 +62,7 @@ $activeProf    = Netbird\activeProfile();
         <input type="button" value="_(Switch)_" onclick="nbProfile('select', $('#nb-profile-select').val())">
         <input type="button" value="_(Delete)_" onclick="nbProfileDelete()">
     <?php else: ?>
-        <span class="nb-profile-empty">No profiles found. Start the daemon and add one below.</span>
+        <span class="nb-profile-empty">No profiles found yet — editing <code><?=htmlspecialchars($editProf)?></code>. Start the daemon and add one below.</span>
     <?php endif; ?>
     &nbsp;&nbsp;
     <input type="text" id="nb-profile-new" placeholder="new-profile-name" maxlength="32">
@@ -59,9 +73,8 @@ $activeProf    = Netbird\activeProfile();
 NetBird supports multiple profiles so you can keep separate identities (e.g., a personal NetBird Cloud account and a self-hosted tenant) on the same host. Switching profiles re-runs <code>netbird up</code> against the new profile using the credentials you fill in below.
 </blockquote>
 
-<form markdown="1" method="POST" action="/update.php" target="progressFrame">
-<input type="hidden" name="#file" value="<?=$plugin?>/<?=$plugin?>.cfg">
-<input type="hidden" name="#command" value="/usr/local/emhttp/plugins/netbird/scripts/apply.sh">
+<form markdown="1" id="nb-settings-form" onsubmit="return false">
+<input type="hidden" id="nb-edit-profile" value="<?=htmlspecialchars($editProf)?>">
 
 _(Enable NetBird)_:
 : <select name="ENABLE_NETBIRD">
@@ -73,11 +86,11 @@ _(Enable NetBird)_:
 Start the NetBird daemon automatically when the array starts. Disabling stops the service on the next apply.
 </blockquote>
 
-_(Active Profile)_:
-: <code><?=htmlspecialchars($activeProf ?: '(none — set one in the bar above)')?></code>
+_(Editing Profile)_:
+: <code><?=htmlspecialchars($editProf)?></code><?php if ($editProf === $activeProf): ?> _(active)_<?php endif; ?>
 
 <blockquote class="inline_help">
-The credentials below are applied to whichever profile is currently active. Switch profiles using the picker above.
+The credentials below belong to the <b><?=htmlspecialchars($editProf)?></b> profile only. Pick a different profile in the bar above to edit its credentials. Clicking <b>Apply</b> saves these credentials to this profile, selects it, and reconnects — it does not touch your other profiles.
 </blockquote>
 
 _(Management URL)_:
@@ -123,12 +136,21 @@ _(Log Level)_:
 NetBird daemon log verbosity. Written to <code>/var/log/netbird.log</code>.
 </blockquote>
 
-<input type="submit" name="#default" value="_(Default)_">
-: <input type="submit" name="#apply" value="_(Apply)_" disabled><input type="button" value="_(Done)_" onclick="done()">
+: <input type="button" value="_(Apply)_" onclick="nbSaveSettings()"><input type="button" value="_(Done)_" onclick="done()">
 </form>
 
 <script>
 var nbCsrfToken = <?= json_encode((@parse_ini_file('/var/local/emhttp/var.ini') ?: [])['csrf_token'] ?? '') ?>;
+
+// Where to send the browser after an action completes. Defaults to a plain
+// reload; pass a profile name to land on that profile's credentials.
+function nbReloadTo(profile) {
+    if (profile) {
+        location.href = location.pathname + '?nbprofile=' + encodeURIComponent(profile);
+    } else {
+        location.reload();
+    }
+}
 
 function nbProfile(action, name, extra) {
     var data = { action: 'profile-' + action, name: name, csrf_token: nbCsrfToken };
@@ -137,7 +159,7 @@ function nbProfile(action, name, extra) {
         if (resp && resp.message) {
             swal({ title: resp.title || 'NetBird', text: resp.message, type: resp.type || 'info' });
         }
-        setTimeout(function(){ location.reload(); }, 1200);
+        setTimeout(function(){ nbReloadTo(resp && resp.profile); }, 1200);
     }, 'json').fail(function(xhr){
         swal({ title: 'NetBird error', text: xhr.responseText || 'Request failed', type: 'error' });
     });
@@ -149,6 +171,34 @@ function nbProfileAdd() {
         swal({ title: 'NetBird', text: 'Profile names: letters, digits, dot, dash, underscore (max 32).', type: 'warning' }); return;
     }
     nbProfile('add', name);
+}
+// View a profile's stored credentials without changing the active profile.
+function nbViewProfile(name) {
+    if (name) { nbReloadTo(name); }
+}
+// Save the global options + the edited profile's credentials, then apply.
+function nbSaveSettings() {
+    var profile = $('#nb-edit-profile').val();
+    var form = document.getElementById('nb-settings-form');
+    var data = {
+        action:         'save',
+        name:           profile,
+        ENABLE_NETBIRD: $('select[name=ENABLE_NETBIRD]', form).val(),
+        LOG_LEVEL:      $('select[name=LOG_LEVEL]', form).val(),
+        MANAGEMENT_URL: $('input[name=MANAGEMENT_URL]', form).val(),
+        SETUP_KEY:      $('input[name=SETUP_KEY]', form).val(),
+        HOSTNAME:       $('input[name=HOSTNAME]', form).val(),
+        PRESHARED_KEY:  $('input[name=PRESHARED_KEY]', form).val(),
+        csrf_token:     nbCsrfToken
+    };
+    $.post('/plugins/netbird/include/action.php', data, function(resp){
+        if (resp && resp.message) {
+            swal({ title: resp.title || 'NetBird', text: resp.message, type: resp.type || 'info' });
+        }
+        setTimeout(function(){ nbReloadTo(resp && resp.profile); }, 1200);
+    }, 'json').fail(function(xhr){
+        swal({ title: 'NetBird error', text: xhr.responseText || 'Request failed', type: 'error' });
+    });
 }
 function nbProfileDelete() {
     var name = $('#nb-profile-select').val();

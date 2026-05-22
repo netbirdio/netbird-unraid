@@ -9,7 +9,11 @@ const PLUGIN          = 'netbird';
 const NETBIRD_BIN     = '/usr/local/sbin/netbird';
 const RC_SCRIPT       = '/etc/rc.d/rc.netbird';
 const CFG_FILE        = '/boot/config/plugins/netbird/netbird.cfg';
+const PROFILE_DIR     = '/boot/config/plugins/netbird/profiles';
 const DAEMON_ADDR     = 'unix:///var/run/netbird.sock';
+
+// Credential keys stored per profile (the rest of netbird.cfg is daemon-global).
+const PROFILE_KEYS    = ['MANAGEMENT_URL', 'SETUP_KEY', 'HOSTNAME', 'PRESHARED_KEY'];
 
 /**
  * Run a netbird CLI subcommand and return [exitCode, stdout].
@@ -104,6 +108,99 @@ function readCfg(): array
         return parse_ini_file(CFG_FILE) ?: [];
     }
     return parse_plugin_cfg(PLUGIN) ?: [];
+}
+
+/**
+ * Merge the given key/value pairs into the global netbird.cfg, preserving any
+ * other keys already present. Values are written quoted; embedded quotes are
+ * stripped.
+ *
+ * @param array<string,string> $updates
+ */
+function writeGlobalCfg(array $updates): bool
+{
+    $existing = is_readable(CFG_FILE) ? (parse_ini_file(CFG_FILE) ?: []) : [];
+    $merged   = array_merge($existing, $updates);
+
+    $dir = dirname(CFG_FILE);
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
+        return false;
+    }
+    $lines = '';
+    foreach ($merged as $k => $v) {
+        $v = str_replace('"', '', (string) $v);
+        $lines .= $k . '="' . $v . "\"\n";
+    }
+    return file_put_contents(CFG_FILE, $lines) !== false;
+}
+
+/**
+ * Reject anything that isn't a valid profile name (mirrors action.php).
+ * Used to keep profile names safe as filename components.
+ */
+function validProfileName(string $name): bool
+{
+    return (bool) preg_match('/^[A-Za-z0-9_.\-]{1,32}$/', $name);
+}
+
+/**
+ * Absolute path to a profile's credential cfg file.
+ */
+function profileCfgPath(string $name): string
+{
+    return PROFILE_DIR . '/' . $name . '.cfg';
+}
+
+/**
+ * Read the per-profile credentials (MANAGEMENT_URL, SETUP_KEY, HOSTNAME,
+ * PRESHARED_KEY) for a given profile. Profiles with no cfg yet start blank.
+ *
+ * @return array<string,string>
+ */
+function readProfileCfg(string $name): array
+{
+    $creds = array_fill_keys(PROFILE_KEYS, '');
+
+    $path = profileCfgPath($name);
+    if (is_readable($path)) {
+        $vals = parse_ini_file($path) ?: [];
+        foreach (PROFILE_KEYS as $k) {
+            $creds[$k] = (string) ($vals[$k] ?? '');
+        }
+    }
+    return $creds;
+}
+
+/**
+ * Persist a profile's credentials to profiles/<name>.cfg.
+ * Returns false if the name is invalid or the file can't be written.
+ *
+ * @param array<string,string> $creds
+ */
+function writeProfileCfg(string $name, array $creds): bool
+{
+    if (!validProfileName($name)) {
+        return false;
+    }
+    if (!is_dir(PROFILE_DIR) && !@mkdir(PROFILE_DIR, 0755, true) && !is_dir(PROFILE_DIR)) {
+        return false;
+    }
+    $lines = '';
+    foreach (PROFILE_KEYS as $k) {
+        $v = str_replace('"', '', (string) ($creds[$k] ?? ''));
+        $lines .= $k . '="' . $v . "\"\n";
+    }
+    return file_put_contents(profileCfgPath($name), $lines) !== false;
+}
+
+/**
+ * Delete a profile's credential cfg (best effort).
+ */
+function deleteProfileCfg(string $name): void
+{
+    if (validProfileName($name)) {
+        @unlink(profileCfgPath($name));
+    }
 }
 
 /**

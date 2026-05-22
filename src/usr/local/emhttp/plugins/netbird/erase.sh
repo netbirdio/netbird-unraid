@@ -10,6 +10,7 @@ log "Stopping NetBird"
 log "Erasing NetBird configuration and state"
 rm -rf /boot/config/plugins/netbird/etc/*
 rm -rf /boot/config/plugins/netbird/lib/*
+rm -rf /boot/config/plugins/netbird/profiles
 rm -f  /boot/config/plugins/netbird/netbird.cfg
 
 log "Restarting NetBird"

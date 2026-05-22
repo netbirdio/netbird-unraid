@@ -65,18 +65,31 @@ stop_netbird() {
     log "Stopping netbird daemon."
     # Try graceful shutdown first via the daemon's own command
     "$DAEMON" down >/dev/null 2>&1
-    # Then kill the service run process
+    # Then signal the service run process
     if [ -f "$PIDFILE" ]; then
         kill "$(cat "$PIDFILE")" 2>/dev/null
         rm -f "$PIDFILE"
     fi
-    /usr/bin/pkill -f "^${DAEMON} service run" 2>/dev/null
+    /usr/bin/pkill -TERM -f "^${DAEMON} service run" 2>/dev/null
+
+    # SIGTERM can take a few seconds to take effect; wait for the process to
+    # actually exit before returning, escalating to SIGKILL if it lingers.
+    # Without this, a quick stop+start (restart) races: start sees the daemon
+    # still running and becomes a no-op, so the restart silently doesn't happen.
+    for _ in $(seq 1 20); do
+        is_running || break
+        sleep 0.5
+    done
+    if is_running ; then
+        log "Daemon still running after SIGTERM; sending SIGKILL."
+        /usr/bin/pkill -9 -f "^${DAEMON} service run" 2>/dev/null
+        sleep 1
+    fi
     rm -f /var/run/netbird.sock
 }
 
 restart_netbird() {
     stop_netbird
-    sleep 1
     start_netbird
 }
 

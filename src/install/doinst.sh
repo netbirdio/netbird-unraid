@@ -1,9 +1,15 @@
 # Slackware post-install hook for unraid-netbird-utils.
 # Runs once at upgradepkg time, with the package root as $PWD.
 
-# Make sure the rc.d script is executable and symlinked from /etc/rc.d
+# Make sure the rc.d script is executable.
 chmod 0755 usr/local/etc/rc.d/rc.netbird
-( cd etc/rc.d ; rm -f rc.netbird ; ln -sf /usr/local/etc/rc.d/rc.netbird rc.netbird )
+# Symlink it into /etc/rc.d only when that's a distinct directory. On stock
+# Unraid /etc/rc.d is itself a symlink to /usr/local/etc/rc.d, so the payload
+# is already reachable as /etc/rc.d/rc.netbird and adding a link would just
+# point the file at itself (a symlink loop that breaks the daemon).
+if [ ! -e etc/rc.d/rc.netbird ]; then
+    ( cd etc/rc.d && ln -sf /usr/local/etc/rc.d/rc.netbird rc.netbird )
+fi
 
 # logrotate ownership
 chmod 0644 etc/logrotate.d/netbird
