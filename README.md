@@ -74,6 +74,10 @@ Upload the `.txz` to a GitHub release tagged with the same version, then
 commit the updated `plugin/netbird.plg` to `main` so users get the new
 version through normal plugin updates.
 
+## License
+
+BSD 3-Clause. See [LICENSE](LICENSE).
+
 ## Credit
 
 The structure here is inspired by the official Unraid

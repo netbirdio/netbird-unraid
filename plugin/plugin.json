@@ -2,6 +2,7 @@
   "name": "netbird",
   "package_name": "unraid-netbird-utils",
   "author": "NetBird",
+  "license": "BSD-3-Clause",
   "min": "7.0.0",
   "support": "https://github.com/netbirdio/netbird-unraid/issues",
   "launch": "Settings/Netbird",
