@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Profile>
+NetBird is an open-source overlay network built on WireGuard. This plugin runs the official NetBird client as a native Unraid system service, so the host itself becomes a peer on your NetBird network — no Docker container, no extra hop.
   <Author>NetBird</Author>
   <Repo>netbirdio/netbird-unraid</Repo>
   <Project>https://github.com/netbirdio/netbird-unraid</Project>
   <Support>https://github.com/netbirdio/netbird-unraid/discussions</Support>
+  <WebPage>https://netbird.io</WebPage>
+  <Twitter>https://twitter.com/netbird</Twitter>
+  <Icon>https://raw.githubusercontent.com/netbirdio/netbird-unraid/main/src/usr/local/emhttp/plugins/netbird/netbird.png</Icon>
 </Profile>
