@@ -76,11 +76,11 @@ version through normal plugin updates.
 
 ## License
 
-BSD 3-Clause. See [LICENSE](LICENSE).
+GPL-3.0. See [LICENSE](LICENSE).
 
 ## Credit
 
-The structure here is inspired by the official Unraid
+The official Unraid
 [Tailscale plugin](https://github.com/unraid/unraid-tailscale) by Derek
-Kaser, same general daemon+CLI+Dynamix shape. Plugin docs from the
+Kaser, was used as a base for this plugin, same general daemon+CLI+Dynamix shape. Plugin docs from the
 [mstrhakr/plugin-docs](https://github.com/mstrhakr/plugin-docs) project.
