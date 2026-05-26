@@ -149,6 +149,15 @@ UP_ARGS="up"
 # NetBird's built-in SSH server (host-wide global toggle from netbird.cfg).
 # Unraid is root-operated, so also permit root login (refused otherwise).
 [ "$ENABLE_SSH" = "1" ]  && UP_ARGS="$UP_ARGS --allow-server-ssh --enable-ssh-root"
+# DNS management (host-wide global toggle from netbird.cfg). Default manages DNS
+# (NetBird's embedded resolver rewrites /etc/resolv.conf); MANAGE_DNS=0 passes
+# --disable-dns so NetBird leaves host DNS alone (issue #2). Explicit boolean so
+# toggling back on re-enables it rather than keeping the profile's last value.
+if [ "$MANAGE_DNS" = "0" ] || [ "$MANAGE_DNS" = "false" ]; then
+    UP_ARGS="$UP_ARGS --disable-dns=true"
+else
+    UP_ARGS="$UP_ARGS --disable-dns=false"
+fi
 
 log "Running: netbird up (profile '$PROFILE', mode '$MODE')"
 OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)

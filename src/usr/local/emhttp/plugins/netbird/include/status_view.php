@@ -6,6 +6,18 @@ require_once "{$docroot}/plugins/netbird/include/common.php";
 $running = Netbird\daemonRunning();
 $status  = Netbird\statusJson();
 
+// Whether the plugin lets NetBird manage host DNS (MANAGE_DNS, default on).
+$manageDns = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
+
+// The host's live resolver, so issue #2 ("NetBird took over my DNS") is visible
+// at a glance: when management is on, NetBird rewrites this to point at its own
+// embedded resolver. Parse the nameserver lines out of /etc/resolv.conf.
+$resolvNs = [];
+$resolvRaw = @file_get_contents('/etc/resolv.conf');
+if ($resolvRaw !== false && preg_match_all('/^\s*nameserver\s+(\S+)/mi', $resolvRaw, $m)) {
+    $resolvNs = $m[1];
+}
+
 $rawStatus = '';
 if (!$status) {
     [$rc, $out] = Netbird\nb(['status']);
@@ -145,12 +157,46 @@ if (!$status) {
     <?php endif; ?>
 
     <!-- ====================================================== DNS Servers -->
-    <?php if (!empty($status['dnsServers'])): ?>
+    <?php
+        // Always render this card (not just when nameserver groups exist), so a
+        // host whose internet DNS broke after connecting can see why — the live
+        // resolv.conf and whether NetBird is managing it. See issue #2.
+        $dnsGroups = $status['dnsServers'] ?? [];
+    ?>
         <div class="nb-card">
-            <h3>DNS servers</h3>
+            <h3>DNS</h3>
+            <div class="nb-grid">
+                <div>NetBird DNS management</div>
+                <div>
+                    <span class="<?=$manageDns ? 'nb-ok' : 'nb-muted'?>">
+                        <?=$manageDns ? 'Enabled' : 'Disabled (--disable-dns)'?>
+                    </span>
+                </div>
+                <div>Host resolver (<code class="nb-mono">/etc/resolv.conf</code>)</div>
+                <div>
+                    <?php if ($resolvNs): ?>
+                        <?php foreach ($resolvNs as $s): ?>
+                            <code class="nb-mono"><?=htmlspecialchars($s)?></code><br>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <span class="nb-muted">(none found)</span>
+                    <?php endif; ?>
+                    <div class="nb-muted" style="font-size:0.9em;">NetBird applies DNS changes a few seconds after connecting — may take a moment to reflect a toggle.</div>
+                </div>
+            </div>
+            <?php if ($manageDns && !$dnsGroups): ?>
+                <p class="nb-muted" style="margin:8px 0 0;">
+                    NetBird is managing DNS but your network defines no nameserver groups, so
+                    its resolver may not forward ordinary internet lookups. If names stop
+                    resolving, add a nameserver group in the NetBird dashboard, or set
+                    <b>Manage DNS</b> to <b>No</b> in Settings. See
+                    <a href="https://github.com/netbirdio/netbird-unraid/issues/2" target="_blank" rel="noopener noreferrer">issue #2</a>.
+                </p>
+            <?php endif; ?>
+            <?php if ($dnsGroups): ?>
             <table class="nb-table">
                 <tr><th>Servers</th><th>Domains</th><th>State</th></tr>
-                <?php foreach ($status['dnsServers'] as $ns): ?>
+                <?php foreach ($dnsGroups as $ns): ?>
                     <tr>
                         <td>
                             <?php foreach (($ns['servers'] ?? []) as $s): ?>
@@ -174,8 +220,8 @@ if (!$status) {
                     </tr>
                 <?php endforeach; ?>
             </table>
+            <?php endif; ?>
         </div>
-    <?php endif; ?>
 
     <!-- =========================================================== Relays -->
     <?php if (!empty($status['relays']['details'])): ?>

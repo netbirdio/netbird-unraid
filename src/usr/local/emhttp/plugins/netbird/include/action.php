@@ -106,6 +106,13 @@ function nb_up_args(array $creds): array
         $args[] = '--allow-server-ssh';
         $args[] = '--enable-ssh-root';
     }
+    // DNS management is host-wide. Default ("1") lets NetBird run its embedded
+    // resolver and rewrite /etc/resolv.conf; turning it off passes
+    // --disable-dns so NetBird leaves the host's DNS untouched (see issue #2).
+    // Pass an explicit boolean either way so toggling back on actually re-enables
+    // it — NetBird remembers the last flag value on the profile otherwise.
+    $manageDns = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
+    $args[] = '--disable-dns=' . ($manageDns ? 'false' : 'true');
     return $args;
 }
 
@@ -286,7 +293,11 @@ switch ($action) {
         // reconnect to take effect (see the mode selection below).
         $sshWas = (Netbird\readCfg()['ENABLE_SSH'] ?? '0') === '1';
         $ssh    = (($_POST['ENABLE_SSH'] ?? '0') === '1') ? '1' : '0';
-        Netbird\writeGlobalCfg(['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh]);
+        // DNS management is a global (host-wide) toggle, like SSH; a change
+        // requires a reconnect to take effect (see the mode selection below).
+        $dnsWas = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
+        $dns    = (($_POST['MANAGE_DNS'] ?? '1') === '0') ? '0' : '1';
+        Netbird\writeGlobalCfg(['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns]);
 
         // Detect a registration-parameter change BEFORE overwriting the stored
         // cfg. NetBird bakes the management URL and hostname into the profile at
@@ -314,7 +325,8 @@ switch ($action) {
         $hostChanged = strtolower(trim($old['HOSTNAME'])) !== strtolower(trim($creds['HOSTNAME']));
         $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
         $sshChanged  = $sshWas !== ($ssh === '1');
-        $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged) ? 'reconnect' : 'ensure');
+        $dnsChanged  = $dnsWas !== ($dns === '1');
+        $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged || $dnsChanged) ? 'reconnect' : 'ensure');
 
         // An empty Setup Key field means "keep the stored key" — the key is only
         // consumed at registration, so a profile never loses it once set. That
