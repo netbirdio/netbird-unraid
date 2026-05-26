@@ -15,6 +15,7 @@ $cfg    = function_exists('parse_plugin_cfg') ? parse_plugin_cfg($plugin) : [];
 // Global daemon options live in netbird.cfg.
 $enabled       = $cfg['ENABLE_NETBIRD']   ?? '1';
 $enableSsh     = $cfg['ENABLE_SSH']       ?? '0';
+$manageDns     = $cfg['MANAGE_DNS']       ?? '1';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
 
 $profiles      = Netbird\listProfiles();
@@ -137,6 +138,16 @@ _(Log Level)_:
 NetBird daemon log verbosity. Written to <code>/var/log/netbird.log</code>.
 </blockquote>
 
+_(Manage DNS)_:
+: <select name="MANAGE_DNS">
+  <?=mk_option($manageDns, "1", _("Yes"))?>
+  <?=mk_option($manageDns, "0", _("No"))?>
+  </select>
+
+<blockquote class="inline_help">
+When enabled (default), NetBird runs its own DNS resolver and rewrites <code>/etc/resolv.conf</code> so it can resolve NetBird domains and any nameservers your network defines. If this leaves the host unable to resolve regular internet names (see <a href="https://github.com/netbirdio/netbird-unraid/issues/2" target="_blank" rel="noopener noreferrer">issue #2</a>), set this to <b>No</b> to pass <code>--disable-dns</code> — NetBird then leaves the host's DNS untouched and uses your existing <code>/etc/resolv.conf</code>. The cleaner fix is usually to configure a nameserver group in the NetBird dashboard instead. Changing this reconnects NetBird to take effect.
+</blockquote>
+
 _(Enable NetBird SSH)_:
 : <select name="ENABLE_SSH">
   <?=mk_option($enableSsh, "0", _("No"))?>
@@ -207,6 +218,7 @@ function nbSaveSettings() {
         name:           profile,
         ENABLE_NETBIRD: $('select[name=ENABLE_NETBIRD]', form).val(),
         ENABLE_SSH:     $('select[name=ENABLE_SSH]', form).val(),
+        MANAGE_DNS:     $('select[name=MANAGE_DNS]', form).val(),
         LOG_LEVEL:      $('select[name=LOG_LEVEL]', form).val(),
         MANAGEMENT_URL: $('input[name=MANAGEMENT_URL]', form).val(),
         SETUP_KEY:      $('input[name=SETUP_KEY]', form).val(),
