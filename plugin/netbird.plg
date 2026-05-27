@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.05.26.0027">
+<!ENTITY version     "2026.05.27.1742">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "f4e88856786bd6dfbcb4ef38d98a2fa281726c18a5ca0bab06e4c8bd7e90b93a">
+<!ENTITY pkgSHA256     "9ee6e7319726fda326529d59c500143fe169e42c86dbb59fd2bb3eee9a42bf9b">
 ]>
 
 <PLUGIN
@@ -43,6 +43,10 @@
 
 
 
+
+### 2026.05.27.1742
+
+- Update NetBird to 0.71.4.
 ### 2026.05.26.0027
 
 - Update NetBird to 0.71.4.
