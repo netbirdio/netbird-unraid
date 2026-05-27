@@ -149,6 +149,31 @@ UP_ARGS="up"
 # NetBird's built-in SSH server (host-wide global toggle from netbird.cfg).
 # Unraid is root-operated, so also permit root login (refused otherwise).
 [ "$ENABLE_SSH" = "1" ]  && UP_ARGS="$UP_ARGS --allow-server-ssh --enable-ssh-root"
+
+# Guard against a stale NetBird-managed /etc/resolv.conf surviving an ungraceful
+# shutdown (reboot, SIGKILL, array stop). If it points only at NetBird's own
+# embedded resolver (100.64.0.0/10) while the daemon is down, the host can't
+# resolve anything -- including the management domain -- so `up` fails with a
+# connect timeout (issue #2, ungraceful-exit case). If the current resolv.conf
+# has no usable upstream, recover one before connecting: prefer NetBird's saved
+# original, else fall back to public resolvers. Runs regardless of MANAGE_DNS,
+# since with --disable-dns NetBird won't fix a stale file on its own.
+nb_cgnat='^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.'
+nb_has_usable_upstream() { # $1=file; 0 if it lists a nameserver outside 100.64/10
+    sed -nE 's/^[[:space:]]*nameserver[[:space:]]+([^[:space:]#]+).*/\1/p' "$1" 2>/dev/null \
+        | grep -qvE "$nb_cgnat"
+}
+if [ -r /etc/resolv.conf ] && ! nb_has_usable_upstream /etc/resolv.conf; then
+    if [ -r /etc/resolv.conf.original.netbird ] && nb_has_usable_upstream /etc/resolv.conf.original.netbird; then
+        cp -a /etc/resolv.conf.original.netbird /etc/resolv.conf \
+            && log "Recovered /etc/resolv.conf from .original.netbird (no usable upstream; issue #2)."
+    else
+        cp -a /etc/resolv.conf "/etc/resolv.conf.preNB.$(date +%s)" 2>/dev/null
+        printf '# Written by netbird-unraid recovery (issue #2)\nnameserver 1.1.1.1\nnameserver 8.8.8.8\n' > /etc/resolv.conf \
+            && log "WARN: no usable upstream in resolv.conf or saved original; wrote fallback (1.1.1.1/8.8.8.8) (issue #2)."
+    fi
+fi
+
 # DNS management (host-wide global toggle from netbird.cfg). Default manages DNS
 # (NetBird's embedded resolver rewrites /etc/resolv.conf); MANAGE_DNS=0 passes
 # --disable-dns so NetBird leaves host DNS alone (issue #2). Explicit boolean so
@@ -157,6 +182,21 @@ if [ "$MANAGE_DNS" = "0" ] || [ "$MANAGE_DNS" = "false" ]; then
     UP_ARGS="$UP_ARGS --disable-dns=true"
 else
     UP_ARGS="$UP_ARGS --disable-dns=false"
+    # Unraid's rc.inet1 writes resolv.conf with inline comments on each line,
+    # e.g. "nameserver 1.1.1.1  # eth0:v4". NetBird can't parse a nameserver off
+    # a commented line, so it captures zero upstreams and its resolver refuses
+    # ordinary lookups (issue #2). Strip the trailing comments off nameserver
+    # lines just before `up` so NetBird records the real upstreams and split DNS
+    # works out of the box. The comments are informational only. Skipped when DNS
+    # management is off (NetBird leaves resolv.conf alone in that case).
+    if grep -qE '^[[:space:]]*nameserver[[:space:]]+[^[:space:]#]+[[:space:]]*#' /etc/resolv.conf 2>/dev/null; then
+        if cp -a /etc/resolv.conf "/etc/resolv.conf.preNB.$(date +%s)" 2>/dev/null \
+           && sed -i -E 's/^([[:space:]]*nameserver[[:space:]]+[^[:space:]#]+).*/\1/' /etc/resolv.conf 2>/dev/null; then
+            log "Stripped inline comments from /etc/resolv.conf nameserver lines (issue #2)."
+        else
+            log "WARN: could not sanitize /etc/resolv.conf; DNS forwarding may not work (issue #2)."
+        fi
+    fi
 fi
 
 log "Running: netbird up (profile '$PROFILE', mode '$MODE')"
