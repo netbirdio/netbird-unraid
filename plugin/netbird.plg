@@ -37,13 +37,6 @@
 <CHANGES>
 <![CDATA[
 
-
-
-
-
-
-
-
 ### 2026.05.27.1742
 
 - Update NetBird to 0.71.4.
@@ -69,6 +62,7 @@
 
 - Initial preview release. NetBird 0.71.2 running natively on Unraid as a system plugin.
 
+Older releases: https://github.com/netbirdio/netbird-unraid/releases
 ]]>
 </CHANGES>
 
