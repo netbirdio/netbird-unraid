@@ -1,0 +1,132 @@
+name: Update NetBird
+
+# Daily check for a new upstream NetBird release. When one is found, bump the
+# pinned version + SHA256 and open a "chore: update NetBird to X" PR against main.
+# Merging that PR puts a single Maintenance line in the drafted changelog; it does
+# NOT release on its own — the maintainer publishes the draft when ready.
+#
+# Prereqs (one-time):
+#   - Repo Settings -> Actions -> "Read and write permissions" +
+#     "Allow GitHub Actions to create and approve pull requests".
+#   - A repo label named "chore" must exist.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      netbird_version:
+        description: 'NetBird version to pin (e.g. 0.71.3, or "latest")'
+        required: false
+        default: 'latest'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve NetBird version
+        id: nb
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          REQ='${{ inputs.netbird_version }}'
+          if [ -z "$REQ" ] || [ "$REQ" = "latest" ]; then
+              TAG=$(gh release view --repo netbirdio/netbird --json tagName --jq .tagName)
+          else
+              # Accept "0.71.3" or "v0.71.3"
+              TAG="${REQ#v}"
+              TAG="v${TAG}"
+          fi
+          VER="${TAG#v}"
+          ASSET="netbird_${VER}_linux_amd64.tar.gz"
+
+          # Pull the digest GitHub already stores for the asset.
+          DIGEST=$(gh release view "$TAG" --repo netbirdio/netbird \
+              --json assets --jq ".assets[] | select(.name == \"$ASSET\") | .digest")
+          if [ -z "$DIGEST" ]; then
+              echo "::error::Asset $ASSET not found in netbirdio/netbird@$TAG"
+              exit 1
+          fi
+          SHA256="${DIGEST#sha256:}"
+
+          # Defense in depth: download + verify locally so we don't trust the API alone.
+          URL="https://github.com/netbirdio/netbird/releases/download/${TAG}/${ASSET}"
+          curl -fsSL -o /tmp/nb.tgz "$URL"
+          ACTUAL=$(sha256sum /tmp/nb.tgz | awk '{print $1}')
+          if [ "$ACTUAL" != "$SHA256" ]; then
+              echo "::error::SHA256 mismatch: API=$SHA256 actual=$ACTUAL"
+              exit 1
+          fi
+          rm -f /tmp/nb.tgz
+
+          echo "version=$VER"   >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Detect unchanged upstream
+        id: changed
+        run: |
+          CUR=$(sed -nE 's/.*<!ENTITY netbirdVer\s+"([^"]+)".*/\1/p' plugin/netbird.plg | head -1)
+          echo "current=$CUR" >> "$GITHUB_OUTPUT"
+          if [ "$CUR" = "${{ steps.nb.outputs.version }}" ]; then
+              echo "::notice::NetBird already pinned at $CUR."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+              echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update plugin/netbird.plg + plugin/plugin.json
+        if: steps.changed.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          NB_VER='${{ steps.nb.outputs.version }}'
+          NB_SHA='${{ steps.nb.outputs.sha256 }}'
+
+          sed -i -E 's|(<!ENTITY netbirdVer\s+")[^"]+(">)|\1'"$NB_VER"'\2|' plugin/netbird.plg
+          sed -i -E 's|(<!ENTITY netbirdSHA256\s+")[^"]+(">)|\1'"$NB_SHA"'\2|' plugin/netbird.plg
+
+          # plugin.json mirror (documentation only)
+          tmp=$(mktemp)
+          jq --arg v "$NB_VER" --arg s "$NB_SHA" \
+              '.netbirdVersion = $v | .netbirdSHA256 = $s' plugin/plugin.json > "$tmp"
+          mv "$tmp" plugin/plugin.json
+
+      - name: Open / update PR
+        if: steps.changed.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NB_VER='${{ steps.nb.outputs.version }}'
+          BRANCH='automation/netbird-bump'
+          TITLE="chore: update NetBird to ${NB_VER}"
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$BRANCH"
+          git add plugin/netbird.plg plugin/plugin.json
+          if git commit -m "$TITLE"; then
+              git push --force origin "$BRANCH"
+          else
+              echo "No changes to commit."
+              exit 0
+          fi
+
+          gh pr create \
+              --title "$TITLE" \
+              --body "Automated upstream bump: NetBird \`${NB_VER}\` (version + SHA256 verified against netbirdio/netbird)." \
+              --head "$BRANCH" \
+              --base main \
+              --label chore \
+          || gh pr edit "$BRANCH" --title "$TITLE"

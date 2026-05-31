@@ -1,0 +1,71 @@
+# Release Drafter config for the NetBird Unraid plugin.
+#
+# Builds the changelog shown in Unraid's plugin update popup from the plugin's
+# own merged PRs, grouped by the label an autolabeler assigns from each PR's
+# conventional-commit title. The drafted release body is injected verbatim into
+# the .plg <CHANGES> block by .github/workflows/release.yml on publish.
+
+categories:
+  - title: "New Features"
+    labels:
+      - "feat"
+  - title: "Bug Fixes"
+    labels:
+      - "fix"
+  - title: "Maintenance"
+    labels:
+      - "chore"
+      - "refactor"
+
+# Bold sub-labels nest cleanly under the "### <version>" heading that the release
+# workflow prepends — Unraid renders **bold** inline rather than as a same-level
+# header (which "###" would produce).
+category-template: "**$TITLE**"
+change-template: "- $TITLE (#$NUMBER)"
+change-title-escapes: '\<*_&'
+
+# Single body section: just the categorized changes. The version heading and the
+# "Older releases" footer are added at inject time by the release workflow.
+template: |
+  $CHANGES
+
+# Strip the conventional-commit prefix from the PR title in the changelog.
+replacers:
+  - search: '/^(feat|fix|chore|refactor)(\([^)]*\))?:\s*/'
+    replace: ""
+
+# Keep purely internal PRs out of the user-facing changelog.
+exclude-labels:
+  - "docs"
+  - "test"
+  - "ci"
+  - "perf"
+  - "translation"
+
+# Label open PRs automatically from their conventional-commit title so the
+# categories above work without manual labeling.
+autolabeler:
+  - label: "feat"
+    title:
+      - '/^feat(\([^)]*\))?!?:/'
+  - label: "fix"
+    title:
+      - '/^fix(\([^)]*\))?!?:/'
+  - label: "chore"
+    title:
+      - '/^chore(\([^)]*\))?!?:/'
+  - label: "refactor"
+    title:
+      - '/^refactor(\([^)]*\))?!?:/'
+  - label: "docs"
+    title:
+      - '/^docs(\([^)]*\))?!?:/'
+  - label: "test"
+    title:
+      - '/^test(\([^)]*\))?!?:/'
+  - label: "ci"
+    title:
+      - '/^ci(\([^)]*\))?!?:/'
+  - label: "perf"
+    title:
+      - '/^perf(\([^)]*\))?!?:/'

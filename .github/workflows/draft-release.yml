@@ -1,0 +1,43 @@
+name: Draft release
+
+# Keeps a single draft GitHub Release up to date with the categorized changelog
+# of merged PRs since the last published release (see .github/release-drafter.yml).
+#
+# - push to main:           (re)draft the release, tagged with a timestamp version.
+# - pull_request_target:    autolabel the PR from its conventional-commit title so
+#                           it lands in the right changelog category once merged.
+#
+# Publishing the draft (in the GitHub UI) is what triggers .github/workflows/
+# release.yml to build and ship — the maintainer controls when a release cuts.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      # Timestamp version matching the plugin's YYYY.MM.DD.HHMM scheme. Passed to
+      # release-drafter as the draft's name + tag (it can't derive a time-based
+      # version itself). Only meaningful on push; harmless on PR autolabel runs.
+      - name: Compute version
+        run: echo "VERSION=$(date -u +%Y.%m.%d.%H%M)" >> "$GITHUB_ENV"
+
+      - uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+          name: ${{ env.VERSION }}
+          tag: ${{ env.VERSION }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
