@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CommunityApplications>
+  <Profile>
+    NetBird for Unraid runs the official NetBird client — an open-source WireGuard mesh VPN — as a native Unraid OS plugin, so the host itself becomes a peer on your NetBird network with no Docker container or extra hop. This repository maintains the netbird.plg plugin (Settings, Status, and Info pages, persistent flash-drive state, and array auto-start). For help, open a GitHub Discussion or Issue on the repository.
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/netbirdio/netbird-unraid/main/src/usr/local/emhttp/plugins/netbird/netbird.png</Icon>
+  <WebPage>https://github.com/netbirdio/netbird-unraid</WebPage>
+  <Forum>https://github.com/netbirdio/netbird-unraid/discussions</Forum>
+</CommunityApplications>
