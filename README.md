@@ -1,5 +1,3 @@
-> ⚠️ Preview release. Validated on Unraid 7.0+. Not yet listed in Community Applications.
-
 # NetBird for Unraid
 
 Run [NetBird](https://netbird.io), the open-source WireGuard mesh VPN, as a
