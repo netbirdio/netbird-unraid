@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.05.27.1742">
+<!ENTITY version     "2026.06.14.1644">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "9ee6e7319726fda326529d59c500143fe169e42c86dbb59fd2bb3eee9a42bf9b">
+<!ENTITY pkgSHA256     "ffccdb9009582174c4e48e8347f7e12699e91662f83017190b3c47cda7518dee">
 ]>
 
 <PLUGIN
@@ -37,32 +37,54 @@
 <CHANGES>
 <![CDATA[
 
+### 2026.06.14.1644
+
+**Fixes**
+
+- ci: use GH\_PAT for NetBird auto-bump PRs (#11)
+
+**New Features**
+
+- feat: add release publishing and changelog automation (#7)
+
+**Maintenance**
+
+- chore: update NetBird to 0.72.4 (#12)
+
 ### 2026.05.27.1742
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.26.0027
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.22.2255
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.22.2030
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.22.1837
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.22.0312
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.22.0233
 
 - Update NetBird to 0.71.4.
+
 ### 2026.05.16.0001
 
 - Initial preview release. NetBird 0.71.2 running natively on Unraid as a system plugin.
 
 Older releases: https://github.com/netbirdio/netbird-unraid/releases
+
 ]]>
 </CHANGES>
 
