@@ -6,9 +6,9 @@ name: Update NetBird
 # NOT release on its own — the maintainer publishes the draft when ready.
 #
 # Prereqs (one-time):
-#   - Repo Settings -> Actions -> "Read and write permissions" +
-#     "Allow GitHub Actions to create and approve pull requests".
-#   - A repo label named "chore" must exist.
+#   - Secret GH_PAT: fine-grained PAT (this repo; Contents + PRs: write).
+#     GITHUB_TOKEN can't open PRs in this org, so we push/PR as GH_PAT.
+#   - A repo label "chore".
 
 on:
   schedule:
@@ -32,6 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT }}
 
       - name: Resolve NetBird version
         id: nb
@@ -104,7 +105,7 @@ jobs:
       - name: Open / update PR
         if: steps.changed.outputs.skip != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           set -euo pipefail
           NB_VER='${{ steps.nb.outputs.version }}'
