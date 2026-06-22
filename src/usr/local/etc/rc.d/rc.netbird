@@ -93,9 +93,15 @@ start_netbird() {
 stop_netbird() {
     log "Stopping netbird daemon."
 
-    # Snapshot the target PIDs up front (pattern matches plus the recorded
-    # pidfile) so a changed command line can't hide a still-live daemon.
-    pids="$(running_pids) $(cat "$PIDFILE" 2>/dev/null)"
+    # Snapshot the target PIDs up front: the precisely-matched running daemons,
+    # plus the recorded pidfile PID, but only if it still points at a netbird
+    # "service run" process. Validating the pidfile guards against SIGKILLing an
+    # unrelated process when it holds a stale PID the OS has since reused.
+    pids="$(running_pids)"
+    _pf="$(cat "$PIDFILE" 2>/dev/null)"
+    if [ -n "$_pf" ] && tr '\0' ' ' < "/proc/$_pf/cmdline" 2>/dev/null | grep -q "netbird.*service run"; then
+        pids="$pids $_pf"
+    fi
     pids="$(printf '%s\n' $pids | grep -E '^[0-9]+$' | sort -u)"
 
     if [ -z "$pids" ]; then
