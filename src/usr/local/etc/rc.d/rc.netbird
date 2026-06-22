@@ -9,12 +9,28 @@ PLUGIN=netbird
 DAEMON=/usr/local/sbin/netbird
 LOGFILE=/var/log/netbird.log
 PIDFILE=/var/run/netbird.pid
-DAEMON_ADDR="unix:///var/run/netbird.sock"
+SOCKFILE=/var/run/netbird.sock
+DAEMON_ADDR="unix://${SOCKFILE}"
 
 . /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
 
+# PIDs of the running NetBird daemon(s). We match by executable name (comm ==
+# "netbird") and then confirm the command line is the long-running "service run"
+# daemon. This deliberately avoids `pgrep -f <path> service run`, which matches
+# ANY process whose command line merely contains that string (shells, scripts,
+# the pgrep itself), producing false positives that make stop/restart unreliable.
+running_pids() {
+    _pids=""
+    for _p in $(/usr/bin/pgrep -x netbird 2>/dev/null); do
+        if tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | grep -q "service run"; then
+            _pids="$_pids $_p"
+        fi
+    done
+    echo $_pids
+}
+
 is_running() {
-    /usr/bin/pgrep -f "^${DAEMON} service run" >/dev/null 2>&1
+    [ -n "$(running_pids)" ]
 }
 
 start_netbird() {
@@ -41,6 +57,11 @@ start_netbird() {
         EXTRA_ARGS="$NETBIRD_CUSTOM_PARAMS"
     fi
 
+    # Remove a stale socket left by an unclean exit. NetBird can't bind a socket
+    # path that already exists on disk and exits immediately, which is why a
+    # start right after a crash or hard kill would otherwise silently fail.
+    rm -f "$SOCKFILE"
+
     log "Starting netbird: $DAEMON service run --daemon-addr $DAEMON_ADDR --log-file $LOGFILE $EXTRA_ARGS"
     mkdir -p /var/lib/netbird /etc/netbird
     nohup "$DAEMON" service run \
@@ -49,47 +70,85 @@ start_netbird() {
         $EXTRA_ARGS >>"$LOGFILE" 2>&1 &
     echo $! > "$PIDFILE"
 
-    # Wait for the daemon socket so callers (netbird up, apply) don't race startup.
-    for _ in $(seq 1 20); do
-        [ -S /var/run/netbird.sock ] && break
+    # Wait for the socket, but bail early if the process dies (e.g. a bind
+    # failure) instead of always blocking the full timeout.
+    i=0
+    while [ "$i" -lt 20 ]; do
+        [ -S "$SOCKFILE" ] && break
+        is_running || break
         sleep 0.5
+        i=$((i + 1))
     done
-    if [ -S /var/run/netbird.sock ]; then
+
+    if [ -S "$SOCKFILE" ] && is_running ; then
         log "NetBird daemon socket is up."
-    else
-        log "WARNING: netbird.sock did not appear within 10s; check $LOGFILE."
+        return 0
     fi
+
+    log "ERROR: NetBird daemon failed to start; last log lines:"
+    tail -n 15 "$LOGFILE" 2>/dev/null
+    return 1
 }
 
 stop_netbird() {
     log "Stopping netbird daemon."
-    # Try graceful shutdown first via the daemon's own command
-    "$DAEMON" down >/dev/null 2>&1
-    # Then signal the service run process
-    if [ -f "$PIDFILE" ]; then
-        kill "$(cat "$PIDFILE")" 2>/dev/null
-        rm -f "$PIDFILE"
-    fi
-    /usr/bin/pkill -TERM -f "^${DAEMON} service run" 2>/dev/null
 
-    # SIGTERM can take a few seconds to take effect; wait for the process to
-    # actually exit before returning, escalating to SIGKILL if it lingers.
-    # Without this, a quick stop+start (restart) races: start sees the daemon
-    # still running and becomes a no-op, so the restart silently doesn't happen.
-    for _ in $(seq 1 20); do
+    # Snapshot the target PIDs up front (pattern matches plus the recorded
+    # pidfile) so a changed command line can't hide a still-live daemon.
+    pids="$(running_pids) $(cat "$PIDFILE" 2>/dev/null)"
+    pids="$(printf '%s\n' $pids | grep -E '^[0-9]+$' | sort -u)"
+
+    if [ -z "$pids" ]; then
+        log "NetBird daemon not running."
+        rm -f "$PIDFILE" "$SOCKFILE"
+        return 0
+    fi
+
+    # NOTE: we deliberately do NOT run "netbird down" first. A SIGTERM already
+    # triggers the daemon's own graceful interface/route teardown, and calling
+    # "down" beforehand was observed to intermittently wedge the daemon so that
+    # the subsequent stop failed to terminate it.
+    for pid in $pids; do
+        kill -TERM "$pid" 2>/dev/null
+    done
+
+    # Allow up to ~6s for a graceful exit.
+    i=0
+    while [ "$i" -lt 12 ]; do
         is_running || break
         sleep 0.5
+        i=$((i + 1))
     done
+
+    # Escalate: SIGKILL every matching PID, repeating until nothing remains or a
+    # ~10s hard deadline passes. Re-querying running_pids each pass also catches
+    # any straggler the initial snapshot missed.
+    i=0
+    while is_running && [ "$i" -lt 20 ]; do
+        for pid in $(running_pids) $pids; do
+            kill -KILL "$pid" 2>/dev/null
+        done
+        sleep 0.5
+        i=$((i + 1))
+    done
+
+    rm -f "$PIDFILE"
+
     if is_running ; then
-        log "Daemon still running after SIGTERM; sending SIGKILL."
-        /usr/bin/pkill -9 -f "^${DAEMON} service run" 2>/dev/null
-        sleep 1
+        log "ERROR: NetBird daemon could not be stopped."
+        return 1
     fi
-    rm -f /var/run/netbird.sock
+    # Clear the socket only once the daemon is confirmed gone, so we never strip
+    # the socket out from under a daemon that is still serving.
+    rm -f "$SOCKFILE"
+    return 0
 }
 
 restart_netbird() {
-    stop_netbird
+    if ! stop_netbird ; then
+        log "Stop reported an error; not starting, to avoid a split state."
+        return 1
+    fi
     start_netbird
 }
 
