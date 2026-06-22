@@ -124,10 +124,15 @@ jobs:
               exit 0
           fi
 
-          gh pr create \
+          if ! gh pr create \
               --title "$TITLE" \
               --body "Automated upstream bump: NetBird \`${NB_VER}\` (version + SHA256 verified against netbirdio/netbird)." \
               --head "$BRANCH" \
               --base main \
-              --label chore \
-          || gh pr edit "$BRANCH" --title "$TITLE"
+              --label chore; then
+              # PR already exists — refresh its title via the REST API. This only
+              # needs the 'repo' scope, unlike `gh pr edit`, whose metadata lookup
+              # queries org teams and requires 'read:org'.
+              NUM=$(gh pr view "$BRANCH" --json number --jq .number)
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$NUM" -f title="$TITLE"
+          fi
