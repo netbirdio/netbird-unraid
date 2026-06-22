@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.06.22.1415">
+<!ENTITY version     "2026.06.22.1943">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "019eda0d8173dfea5e1f3a9be27cbf1b9ae29c811cb4d527600e88d1a8fd3d4c">
+<!ENTITY pkgSHA256     "7b46c80c9d94ae30487bb08b990b2a7215f4a5dbe2fb50b195a0e706352a8a2c">
 ]>
 
 <PLUGIN
@@ -36,6 +36,14 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.06.22.1943
+
+**Bug Fixes**
+
+- fix: reliably detect and cycle the NetBird daemon on stop/restart (#18)
+- fix: restart NetBird daemon on update so the dashboard shows the new version (#16)
+- fix: render the dashboard widget as a grid tile so it aligns and can be moved (#17)
 
 ### 2026.06.22.1415
 
