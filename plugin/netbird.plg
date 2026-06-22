@@ -30,7 +30,7 @@
   launch="&launch;"
   pluginURL="&pluginURL;"
   min="7.0.0"
-  support="https://github.com/&gitUser;/&gitRepo;/discussions"
+  support="https://github.com/&gitUser;/&gitRepo;/issues"
   project="https://github.com/&gitUser;/&gitRepo;"
 >
 
