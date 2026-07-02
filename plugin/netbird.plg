@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.06.22.2046">
+<!ENTITY version     "2026.07.02.1645">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "bbbeb611bd8ec107921c054f49f86362bfd48158328649d5b22a4dd7605a3f41">
+<!ENTITY pkgSHA256     "38709a149499bafdad5a3949d87164d6e80cbc553a2e69c32d141a4e7c701b80">
 ]>
 
 <PLUGIN
@@ -36,6 +36,16 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.07.02.1645
+
+**Bug Fixes**
+
+- fix: point the plugin support link to Issues instead of Discussions (#20)
+
+**Maintenance**
+
+- chore: update NetBird to 0.74.0 (#21)
 
 ### 2026.06.22.2046
 
@@ -98,10 +108,6 @@
 ### 2026.05.22.0233
 
 - Update NetBird to 0.71.4.
-
-### 2026.05.16.0001
-
-- Initial preview release. NetBird 0.71.2 running natively on Unraid as a system plugin.
 
 Older releases: https://github.com/netbirdio/netbird-unraid/releases
 
