@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.07.15.0258">
+<!ENTITY version     "2026.07.15.0337">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "57e4a96563c18c609ddf1eff8fb049b6965e791a5058289a3462964c572282a4">
+<!ENTITY pkgSHA256     "247c076b2080178765a4a543460eba5b85296ffa97b91e1c092f9409e27ca8e0">
 ]>
 
 <PLUGIN
@@ -36,6 +36,12 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.07.15.0337
+
+**Bug Fixes**
+
+- fix: avoid status and settings page delays when NetBird is disabled (#29)
 
 ### 2026.07.15.0258
 
@@ -115,10 +121,6 @@
 - Update NetBird to 0.71.4.
 
 ### 2026.05.26.0027
-
-- Update NetBird to 0.71.4.
-
-### 2026.05.22.2255
 
 - Update NetBird to 0.71.4.
 
