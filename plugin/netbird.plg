@@ -149,6 +149,27 @@ Older releases: https://github.com/netbirdio/netbird-unraid/releases
 <FILE Run="/bin/bash">
 <INLINE>
 <![CDATA[
+# Capture the pre-install service state before replacing the in-RAM binary and
+# package. Fresh installations default to disabled; upgrades preserve the old
+# enabled/disabled behavior. Releases before this migration treated a missing
+# persistent cfg as enabled, so migrate that specific upgrade case to an
+# explicit enabled cfg.
+NETBIRD_EXISTING=0
+NETBIRD_HAD_CFG=0
+NETBIRD_ENABLE_AFTER_INSTALL=0
+[ -x /usr/local/sbin/netbird ] && NETBIRD_EXISTING=1
+if [ -f /boot/config/plugins/netbird/netbird.cfg ]; then
+    NETBIRD_HAD_CFG=1
+    ENABLE_NETBIRD=1
+    # shellcheck disable=SC1091
+    . /boot/config/plugins/netbird/netbird.cfg
+    if [ "$ENABLE_NETBIRD" != "0" ] && [ "$ENABLE_NETBIRD" != "false" ]; then
+        NETBIRD_ENABLE_AFTER_INSTALL=1
+    fi
+elif [ "$NETBIRD_EXISTING" = "1" ]; then
+    NETBIRD_ENABLE_AFTER_INSTALL=1
+fi
+
 # Clean any prior in-RAM install of plugin pages
 if [ -d "/usr/local/emhttp/plugins/netbird" ]; then
     rm -rf /usr/local/emhttp/plugins/netbird
@@ -156,6 +177,16 @@ fi
 
 # Install plugin support package (pages, rc.d script, default config, etc.)
 upgradepkg --install-new /boot/config/plugins/netbird/unraid-netbird-utils-]]>&version;<![CDATA[-noarch-1.txz
+
+# Preserve the historical enabled default for existing installations that have
+# never written netbird.cfg. New installations intentionally leave the cfg
+# absent and inherit the new packaged disabled default.
+if [ "$NETBIRD_EXISTING" = "1" ] && [ "$NETBIRD_HAD_CFG" = "0" ]; then
+    mkdir -p /boot/config/plugins/netbird
+    cp /usr/local/emhttp/plugins/netbird/default.cfg /boot/config/plugins/netbird/netbird.cfg
+    sed -i 's/^ENABLE_NETBIRD=.*/ENABLE_NETBIRD="1"/' /boot/config/plugins/netbird/netbird.cfg
+    echo "  migrated existing installation to explicit ENABLE_NETBIRD=1"
+fi
 
 # Extract NetBird upstream binary into /usr/local/sbin
 mkdir -p /usr/local/sbin
@@ -198,23 +229,30 @@ NEOF
     echo "  wrote $NEC with include_interfaces=\"wt0\""
 fi
 
-# Restart the daemon synchronously (waits for the socket), then reload nginx as
-# soon as wt0 appears (so the WebGUI binds to the NetBird IP and is reachable
-# from other peers). "restart" (not "start") matters on upgrades: the old daemon
-# is still running the previous binary, so a plain "start" would no-op on it and
-# `netbird status` would keep reporting the old version until the next reboot.
-# stop is a safe no-op on a clean install where nothing is running yet.
-/etc/rc.d/rc.netbird restart
-(
-    for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
-        if ip -4 addr show wt0 >/dev/null 2>&1; then
-            /etc/rc.d/rc.nginx reload >/dev/null 2>&1
-            exit 0
-        fi
-        sleep 2
-    done
-) >/dev/null 2>&1 </dev/null &
-disown 2>/dev/null || true
+# On upgrades or reinstalls with preserved settings, restart an enabled daemon
+# synchronously so it runs the newly installed binary. Keep a saved disabled
+# state stopped. A truly fresh install (no old binary or cfg) remains stopped
+# until the user enables it with valid profile credentials; apply.sh handles the
+# first nginx reload once wt0 appears.
+if [ "$NETBIRD_EXISTING" = "1" ] || [ "$NETBIRD_HAD_CFG" = "1" ]; then
+    if [ "$NETBIRD_ENABLE_AFTER_INSTALL" = "1" ]; then
+        /etc/rc.d/rc.netbird restart
+        (
+            for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+                if ip -4 addr show wt0 >/dev/null 2>&1; then
+                    /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+                    exit 0
+                fi
+                sleep 2
+            done
+        ) >/dev/null 2>&1 </dev/null &
+        disown 2>/dev/null || true
+    else
+        /etc/rc.d/rc.netbird stop
+    fi
+else
+    echo "  NetBird installed disabled; configure and enable it from Settings"
+fi
 
 # Clean up older versions on flash
 rm -f $(ls /boot/config/plugins/netbird/unraid-netbird-utils-*.txz 2>/dev/null | grep -v ']]>&version;<![CDATA[')

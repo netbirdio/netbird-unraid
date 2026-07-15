@@ -50,7 +50,38 @@ if command -v makepkg >/dev/null 2>&1; then
     /sbin/makepkg -l y -c n "${DIST_DIR}/${PKG_FILE}"
 else
     echo "(makepkg not found; producing tar.xz with the same layout)"
-    tar --owner=0 --group=0 -cJf "${DIST_DIR}/${PKG_FILE}" .
+    # Passing "." to tar prefixes every payload member with "./". Slackware's
+    # installpkg repairs those names in its file manifest, but upgradepkg's
+    # temporary install-script relocation only matches "install/...". The
+    # result is a silently skipped doinst.sh on upgrades. Archive the top-level
+    # entries by name so install/doinst.sh is recognized in both install modes.
+    (
+        shopt -s dotglob nullglob
+        package_entries=(*)
+        if [ "${#package_entries[@]}" -eq 0 ]; then
+            echo "ERROR: package staging directory is empty" >&2
+            exit 1
+        fi
+        tar --owner=0 --group=0 -cJf "${DIST_DIR}/${PKG_FILE}" "${package_entries[@]}"
+    )
+fi
+
+# Guard the upgrade-sensitive package layout regardless of which builder was
+# used. A Slackware package may contain the root member "./", but payload paths
+# (especially install/doinst.sh) must not carry that prefix.
+package_has_doinst=0
+while IFS= read -r member; do
+    if [ "$member" = "install/doinst.sh" ]; then
+        package_has_doinst=1
+    elif [[ "$member" == ./* && "$member" != "./" ]]; then
+        echo "ERROR: invalid Slackware package member '$member' (unexpected ./ prefix)" >&2
+        exit 1
+    fi
+done < <(tar -tJf "${DIST_DIR}/${PKG_FILE}")
+
+if [ "$package_has_doinst" -ne 1 ]; then
+    echo "ERROR: package is missing install/doinst.sh at the archive root" >&2
+    exit 1
 fi
 
 cd "${repo_root}"

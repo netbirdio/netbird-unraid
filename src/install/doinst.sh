@@ -15,7 +15,8 @@ fi
 chmod 0644 etc/logrotate.d/netbird
 chown root:root etc/logrotate.d/netbird
 
-# Event hooks: restart daemon when array starts; stop on shutdown
+# Event hooks: reconcile the daemon when the array starts (rc.netbird keeps a
+# disabled installation stopped).
 ( cd usr/local/emhttp/plugins/netbird/event
   rm -f array_started stopped started stopping_svcs
   ln -sf ../restart.sh array_started

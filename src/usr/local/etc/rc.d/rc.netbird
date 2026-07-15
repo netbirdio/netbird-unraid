@@ -11,6 +11,8 @@ LOGFILE=/var/log/netbird.log
 PIDFILE=/var/run/netbird.pid
 SOCKFILE=/var/run/netbird.sock
 DAEMON_ADDR="unix://${SOCKFILE}"
+DEFAULT_CFG=/usr/local/emhttp/plugins/netbird/default.cfg
+GLOBAL_CFG=/boot/config/plugins/netbird/netbird.cfg
 
 . /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
 
@@ -39,14 +41,21 @@ start_netbird() {
         return 0
     fi
 
-    # Pre-flight: respect "Enable=no" in plugin settings, if set
-    if [ -f /boot/config/plugins/netbird/netbird.cfg ]; then
-        # shellcheck disable=SC1091
-        . /boot/config/plugins/netbird/netbird.cfg
-        if [ "$ENABLE_NETBIRD" = "0" ] || [ "$ENABLE_NETBIRD" = "false" ]; then
-            log "NetBird is disabled in plugin settings; not starting."
-            return 0
-        fi
+    # Pre-flight: fresh installations are disabled until the user explicitly
+    # enables and configures NetBird. The persistent cfg overrides packaged
+    # defaults once settings have been saved.
+    ENABLE_NETBIRD=0
+    if [ -f "$DEFAULT_CFG" ]; then
+        # shellcheck disable=SC1090
+        . "$DEFAULT_CFG"
+    fi
+    if [ -f "$GLOBAL_CFG" ]; then
+        # shellcheck disable=SC1090
+        . "$GLOBAL_CFG"
+    fi
+    if [ "$ENABLE_NETBIRD" = "0" ] || [ "$ENABLE_NETBIRD" = "false" ]; then
+        log "NetBird is disabled in plugin settings; not starting."
+        return 0
     fi
 
     # Optional custom args (advanced users)

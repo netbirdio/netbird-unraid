@@ -10,7 +10,7 @@ Features:
 - Installs the upstream NetBird Linux binary natively
 - Persistent config and state on the USB flash drive
 - Settings, Status, and Info pages under Network Services
-- Survives reboots; auto-starts with the array
+- Survives reboots; once enabled, auto-starts with the array
   </Description>
   <Icon>https://raw.githubusercontent.com/netbirdio/netbird-unraid/main/src/usr/local/emhttp/plugins/netbird/netbird.png</Icon>
   <Category>Network: Tools: Productivity:</Category>

@@ -14,12 +14,14 @@ In **Plugins → Install Plugin**, paste:
 https://raw.githubusercontent.com/netbirdio/netbird-unraid/main/plugin/netbird.plg
 ```
 
-Then open **Settings → Netbird** to configure.
+Then open **Settings → Netbird**, enter a setup key, and select **Enable
+NetBird: Yes**. Fresh installations remain disabled until that first successful
+configuration.
 
 ## What you get
 
 - The official upstream `netbird` Linux binary at `/usr/local/sbin/netbird`
-- An rc.d service (`/etc/rc.d/rc.netbird`) that survives reboots
+- An rc.d service (`/etc/rc.d/rc.netbird`) that survives reboots once enabled
 - Dynamix WebGUI pages: **Settings**, **Status**, **Info** + a Dashboard tile
 - Persistent identity and config on the USB flash drive, so reboots don't
   forget who this peer is
@@ -34,8 +36,8 @@ plain init, so this plugin:
 1. Downloads the upstream tarball from `github.com/netbirdio/netbird/releases`,
    pinned by SHA256.
 2. Drops the binary at `/usr/local/sbin/netbird`.
-3. Runs `netbird service run` from `/etc/rc.d/rc.netbird` (foreground daemon,
-   logging to `/var/log/netbird.log`).
+3. Once enabled, runs `netbird service run` from `/etc/rc.d/rc.netbird`
+   (foreground daemon, logging to `/var/log/netbird.log`).
 4. Symlinks NetBird's two state paths onto the flash drive so the identity
    survives Unraid's ephemeral rootfs:
 
@@ -44,8 +46,8 @@ plain init, so this plugin:
    | `/etc/netbird`       | `/boot/config/plugins/netbird/etc`    |
    | `/var/lib/netbird`   | `/boot/config/plugins/netbird/lib`    |
 
-5. Adds an array-start event hook so the daemon comes up whenever the array
-   starts.
+5. Adds an array-start event hook so an enabled daemon comes up whenever the
+   array starts. Disabled installations remain stopped.
 
 ## Notes
 
