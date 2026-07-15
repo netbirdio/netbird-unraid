@@ -10,21 +10,39 @@ try {
     $docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
     require_once "{$docroot}/plugins/netbird/include/common.php";
 
+    $cfg       = Netbird\readCfg();
+    $enableCfg = strtolower(trim((string) ($cfg['ENABLE_NETBIRD'] ?? '0')));
+    $enabled   = !in_array($enableCfg, ['0', 'false'], true);
     $running   = Netbird\daemonRunning();
-    $status    = Netbird\statusJson();
+    // A disabled dashboard tile should be quiet even if a stop is still in
+    // flight. Avoid asking the daemon for status until the service is enabled.
+    $status    = ($enabled && $running) ? Netbird\statusJson() : null;
     $ip4       = $status['netbirdIp']   ?? '';
     $ip6       = $status['netbirdIpv6'] ?? '';
     $fqdn      = $status['fqdn']        ?? '';
     $prof      = $status['profileName'] ?? '';
     $mgmtOk    = !empty($status['management']['connected']);
 
+    $err = trim((string) ($status['management']['error'] ?? ''));
+    if ($err === '') {
+        $err = trim((string) ($status['signal']['error'] ?? ''));
+    }
+    $expectedSetupError = stripos($err, 'no peer auth method provided') !== false;
+    $profiles = ($enabled && $running && !$mgmtOk) ? Netbird\listProfiles() : [];
+    $awaitingSetup = $enabled && $running && !$mgmtOk
+        && (!$profiles || $expectedSetupError);
+
     $row = static fn (string $label, string $value): string =>
         "<tr><td><span class='w26'>{$label}</span>{$value}</td></tr>" . PHP_EOL;
 
-    if ($running && $mgmtOk) {
+    if (!$enabled) {
+        $state = "<span style='color:#888;'>Disabled</span>";
+    } elseif ($running && $mgmtOk) {
         $state = "<span style='color:#2eaa2e;'>Connected</span>";
+    } elseif ($awaitingSetup) {
+        $state = "<span style='color:#d39e00;'>Awaiting configuration</span>";
     } elseif ($running) {
-        $state = "<span style='color:#d39e00;'>Daemon running, not logged in</span>";
+        $state = "<span style='color:#d39e00;'>Daemon running, not connected</span>";
     } else {
         $state = "<span style='color:#c8331f;'>Stopped</span>";
     }
@@ -32,7 +50,7 @@ try {
     $rows = $row('Status', $state);
 
     if ($status) {
-        if ($running && $mgmtOk) {
+        if ($mgmtOk) {
             // Peer breakdown by connection type (direct vs relayed).
             $details = $status['peers']['details'] ?? [];
             $peers   = (int) ($status['peers']['total'] ?? count($details));
@@ -80,13 +98,17 @@ try {
             $rows .= $row('Version', $verVal);
         }
 
-        // Surface a control-plane error if one is present.
-        $err = trim((string) ($status['management']['error'] ?? ''));
-        if ($err === '') {
-            $err = trim((string) ($status['signal']['error'] ?? ''));
-        }
-        if ($err !== '') {
-            $rows .= $row('Error', "<span style='color:#c8331f;'>" . htmlspecialchars($err) . "</span>");
+        // "No peer auth method" is expected before initial setup and is already
+        // represented by the friendlier state above. Unexpected control-plane
+        // errors remain visible, but wrap so they cannot stretch the dashboard
+        // grid into an oversized tile.
+        if ($err !== '' && !$expectedSetupError) {
+            $rows .= $row(
+                'Error',
+                "<span style='color:#c8331f;white-space:normal;overflow-wrap:anywhere;word-break:break-word;'>"
+                    . htmlspecialchars($err)
+                    . '</span>'
+            );
         }
     }
 

@@ -33,6 +33,7 @@ if [ -z "$PROFILE" ]; then
 fi
 
 NB=/usr/local/sbin/netbird
+DEFAULT_CFG=/usr/local/emhttp/plugins/netbird/default.cfg
 GLOBAL_CFG=/boot/config/plugins/netbird/netbird.cfg
 PROFILE_CFG="/boot/config/plugins/netbird/profiles/${PROFILE}.cfg"
 LOCK_FILE=/var/run/netbird-apply.lock
@@ -46,6 +47,22 @@ write_result() {
         "$PROFILE" "$1" "$(date +%s)" "$2" > "$RESULT_FILE" 2>/dev/null
 }
 
+# Once a first-time connection creates wt0, reload nginx so the Unraid WebGUI
+# binds to the NetBird address added to network-extra.cfg by the installer. The
+# watcher closes the apply lock descriptor so it cannot delay another operation.
+reload_nginx_when_wt0_ready() {
+    (
+        exec 9>&-
+        for _ in $(seq 1 15); do
+            if ip -4 addr show wt0 >/dev/null 2>&1; then
+                /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+                exit 0
+            fi
+            sleep 2
+        done
+    ) >/dev/null 2>&1 </dev/null &
+}
+
 # Serialize with other applies / connect actions.
 exec 9>"$LOCK_FILE"
 if ! flock -w 90 9 ; then
@@ -56,7 +73,12 @@ fi
 
 write_result null "applying"
 
-# Global daemon options.
+# Global daemon options. Packaged defaults make a missing persistent cfg
+# disabled, matching rc.netbird and the Settings page.
+if [ -f "$DEFAULT_CFG" ]; then
+    # shellcheck disable=SC1090
+    . "$DEFAULT_CFG"
+fi
 if [ -f "$GLOBAL_CFG" ]; then
     # shellcheck disable=SC1090
     . "$GLOBAL_CFG"
@@ -205,6 +227,7 @@ RC=$?
 echo "$OUT" >> /var/log/netbird-utils.log
 if [ "$RC" -eq 0 ]; then
     log "netbird up succeeded for profile '$PROFILE'."
+    reload_nginx_when_wt0_ready
     write_result true "connected"
 elif [ "$RC" -eq 124 ]; then
     log "netbird up timed out for profile '$PROFILE' after 90s."

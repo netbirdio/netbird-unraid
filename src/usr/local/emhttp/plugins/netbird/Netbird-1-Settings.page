@@ -13,7 +13,7 @@ $plugin = 'netbird';
 $cfg    = function_exists('parse_plugin_cfg') ? parse_plugin_cfg($plugin) : [];
 
 // Global daemon options live in netbird.cfg.
-$enabled       = $cfg['ENABLE_NETBIRD']   ?? '1';
+$enabled       = $cfg['ENABLE_NETBIRD']   ?? '0';
 $enableSsh     = $cfg['ENABLE_SSH']       ?? '0';
 $manageDns     = $cfg['MANAGE_DNS']       ?? '1';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
@@ -85,7 +85,9 @@ _(Enable NetBird)_:
   </select>
 
 <blockquote class="inline_help">
-Start the NetBird daemon automatically when the array starts. Disabling stops the service on the next apply.
+Start the NetBird daemon automatically when the array starts. Fresh installations
+remain stopped until NetBird is enabled and configured. Disabling stops the
+service on the next apply.
 </blockquote>
 
 _(Editing Profile)_:
@@ -202,12 +204,13 @@ function nbViewProfile(name) {
 function nbSaveSettings() {
     var profile = $('#nb-edit-profile').val();
     var form = document.getElementById('nb-settings-form');
+    var enableNetBird = $('select[name=ENABLE_NETBIRD]', form).val();
     // A setup key is required only when registering: a profile that has no key
     // stored yet (initial setup). Reconnecting an already-registered profile
     // doesn't need one. (A management-URL/hostname change also re-registers; the
     // server enforces that case and returns a clear error if the key is missing.)
     var nbRequireKey = <?= empty($setupKey) ? 'true' : 'false' ?>;
-    if (nbRequireKey && !($('input[name=SETUP_KEY]', form).val() || '').trim()) {
+    if (enableNetBird === '1' && nbRequireKey && !($('input[name=SETUP_KEY]', form).val() || '').trim()) {
         swal({ title: 'Setup key required',
                text: 'Enter a setup key from your NetBird dashboard to register this profile. Interactive SSO login is not supported.',
                type: 'warning' });
@@ -216,7 +219,7 @@ function nbSaveSettings() {
     var data = {
         action:         'save',
         name:           profile,
-        ENABLE_NETBIRD: $('select[name=ENABLE_NETBIRD]', form).val(),
+        ENABLE_NETBIRD: enableNetBird,
         ENABLE_SSH:     $('select[name=ENABLE_SSH]', form).val(),
         MANAGE_DNS:     $('select[name=MANAGE_DNS]', form).val(),
         LOG_LEVEL:      $('select[name=LOG_LEVEL]', form).val(),
@@ -250,7 +253,7 @@ function nbPollApply(profile, since, triesLeft) {
         var done = res && res.profile === profile && res.ts >= since && (res.ok === true || res.ok === false);
         if (done) {
             swal(res.ok
-                ? { title: 'Connected', text: res.message || 'Applied.', type: 'success' }
+                ? { title: 'Settings applied', text: res.message || 'Applied.', type: 'success' }
                 : { title: 'Apply failed', text: res.message || 'Could not apply settings.', type: 'error' });
             setTimeout(function(){ nbReloadTo(profile); }, 1500);
             return;

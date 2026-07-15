@@ -297,66 +297,79 @@ switch ($action) {
         // requires a reconnect to take effect (see the mode selection below).
         $dnsWas = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
         $dns    = (($_POST['MANAGE_DNS'] ?? '1') === '0') ? '0' : '1';
-        Netbird\writeGlobalCfg(['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns]);
+        $globalCfg = ['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns];
+        $mode      = 'ensure';
 
-        // Detect a registration-parameter change BEFORE overwriting the stored
-        // cfg. NetBird bakes the management URL and hostname into the profile at
-        // registration; changing either is ignored by a plain `up`, so the
-        // profile must be re-registered (see apply.sh). The setup key is auth
-        // material, not an identity, so it does not trigger re-registration.
-        $old      = Netbird\readProfileCfg($name);
-        $creds    = [];
-        foreach (Netbird\PROFILE_KEYS as $k) {
-            $creds[$k] = (string) ($_POST[$k] ?? '');
-        }
-        // Pick how apply.sh should bring the change into effect. NetBird ignores
-        // most setting changes on an already-connected profile, so:
-        //   reregister — mgmt URL / hostname changed (baked at registration).
-        //   reconnect  — pre-shared key changed to a new value (down+up re-applies
-        //                it without a full re-register).
-        //   ensure     — no credential change (plain select+up; no disconnect).
-        // Setup-key-only changes stay 'ensure' (the key is auth material, not an
-        // identity — re-registering on it would needlessly spend a key use).
-        // NOTE: a PSK cannot be *removed* via the CLI — netbird treats an empty
-        // --preshared-key as "leave unchanged" and even remove+add+up retains the
-        // stored value. So clearing the field can't take effect without a full
-        // erase/re-create of the profile; we don't churn the connection trying.
-        $mgmtChanged = nb_mgmt_norm($old['MANAGEMENT_URL']) !== nb_mgmt_norm($creds['MANAGEMENT_URL']);
-        $hostChanged = strtolower(trim($old['HOSTNAME'])) !== strtolower(trim($creds['HOSTNAME']));
-        $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
-        $sshChanged  = $sshWas !== ($ssh === '1');
-        $dnsChanged  = $dnsWas !== ($dns === '1');
-        $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged || $dnsChanged) ? 'reconnect' : 'ensure');
+        // Disabling is deliberately independent of profile state. A fresh
+        // installation must be stoppable without first supplying registration
+        // credentials. When enabling, validate and save the selected profile as
+        // usual before queueing the apply.
+        if ($enable === '1') {
+            // Detect a registration-parameter change BEFORE overwriting the
+            // stored cfg. NetBird bakes the management URL and hostname into the
+            // profile at registration; changing either is ignored by a plain
+            // `up`, so the profile must be re-registered (see apply.sh). The setup
+            // key is auth material, not an identity, so it does not trigger
+            // re-registration.
+            $old   = Netbird\readProfileCfg($name);
+            $creds = [];
+            foreach (Netbird\PROFILE_KEYS as $k) {
+                $creds[$k] = (string) ($_POST[$k] ?? '');
+            }
+            // Pick how apply.sh should bring the change into effect. NetBird
+            // ignores most setting changes on an already-connected profile, so:
+            //   reregister — mgmt URL / hostname changed (baked at registration).
+            //   reconnect  — pre-shared key changed to a new value (down+up
+            //                re-applies it without a full re-register).
+            //   ensure     — no credential change (plain select+up; no disconnect).
+            // Setup-key-only changes stay 'ensure' (the key is auth material, not
+            // an identity — re-registering on it would needlessly spend a key use).
+            // NOTE: a PSK cannot be *removed* via the CLI — netbird treats an
+            // empty --preshared-key as "leave unchanged" and even remove+add+up
+            // retains the stored value. Clearing the field therefore cannot take
+            // effect without a full erase/re-create of the profile.
+            $mgmtChanged = nb_mgmt_norm($old['MANAGEMENT_URL']) !== nb_mgmt_norm($creds['MANAGEMENT_URL']);
+            $hostChanged = strtolower(trim($old['HOSTNAME'])) !== strtolower(trim($creds['HOSTNAME']));
+            $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
+            $sshChanged  = $sshWas !== ($ssh === '1');
+            $dnsChanged  = $dnsWas !== ($dns === '1');
+            $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged || $dnsChanged) ? 'reconnect' : 'ensure');
 
-        // An empty Setup Key field means "keep the stored key" — the key is only
-        // consumed at registration, so a profile never loses it once set. That
-        // keeps "has a stored key" a reliable "has been registered" signal for the
-        // up/switch guards above. A key is mandatory only when (re)registering:
-        // initial setup, or a re-register from a management-URL/hostname change.
-        if (trim($creds['SETUP_KEY']) === '' && trim($old['SETUP_KEY']) !== '') {
-            $creds['SETUP_KEY'] = $old['SETUP_KEY'];
+            // An empty Setup Key field means "keep the stored key" — the key is
+            // only consumed at registration, so a profile never loses it once
+            // set. A key is mandatory only when enabling a profile that needs to
+            // be initially registered or re-registered.
+            if (trim($creds['SETUP_KEY']) === '' && trim($old['SETUP_KEY']) !== '') {
+                $creds['SETUP_KEY'] = $old['SETUP_KEY'];
+            }
+            $everConfigured = trim($old['SETUP_KEY']) !== '';
+            $registering    = !$everConfigured || $mode === 'reregister';
+            if ($registering && trim($creds['SETUP_KEY']) === '') {
+                http_response_code(400);
+                echo json_encode([
+                    'type'    => 'error',
+                    'title'   => 'Setup key required',
+                    'message' => 'A setup key is required to register this profile. Generate one in your NetBird dashboard and paste it here.',
+                ]);
+                break;
+            }
         }
-        $everConfigured = trim($old['SETUP_KEY']) !== '';
-        $registering    = !$everConfigured || $mode === 'reregister';
-        if ($registering && trim($creds['SETUP_KEY']) === '') {
-            http_response_code(400);
-            echo json_encode([
-                'type'    => 'error',
-                'title'   => 'Setup key required',
-                'message' => 'A setup key is required to register this profile. Generate one in your NetBird dashboard and paste it here.',
-            ]);
+
+        if (!Netbird\writeGlobalCfg($globalCfg)) {
+            http_response_code(500);
+            echo json_encode(['type' => 'error', 'message' => 'Could not write the NetBird global configuration.']);
             break;
         }
-
-        if (!Netbird\writeProfileCfg($name, $creds)) {
+        if ($enable === '1' && !Netbird\writeProfileCfg($name, $creds)) {
             http_response_code(500);
             echo json_encode(['type' => 'error', 'message' => "Could not write profile '$name'."]);
             break;
         }
 
-        // apply.sh (backgrounded; it takes the apply lock itself) selects the
-        // profile, ensures the daemon is running, and runs up in the chosen mode.
-        // It records the outcome to RESULT_FILE, which the page polls via
+        // apply.sh (backgrounded; it takes the apply lock itself) stops the
+        // daemon immediately when disabled. When enabled it selects the profile,
+        // ensures the daemon is running, and runs up in the chosen mode. It
+        // records the outcome to RESULT_FILE, which the page polls via
         // 'apply-status'. We return immediately with a "since" stamp so the
         // poller only accepts a result newer than this request.
         exec('/usr/local/emhttp/plugins/netbird/scripts/apply.sh '
@@ -364,7 +377,7 @@ switch ($action) {
         echo json_encode([
             'type'    => 'info',
             'title'   => 'Settings saved',
-            'message' => "Saved profile '$name'; applying…",
+            'message' => $enable === '1' ? "Saved profile '$name'; applying…" : 'Disabling NetBird…',
             'profile' => $name,
             'pending' => true,
             'since'   => time(),
