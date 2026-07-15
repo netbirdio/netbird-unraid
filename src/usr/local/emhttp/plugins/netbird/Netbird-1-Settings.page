@@ -18,8 +18,20 @@ $enableSsh     = $cfg['ENABLE_SSH']       ?? '0';
 $manageDns     = $cfg['MANAGE_DNS']       ?? '1';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
 
-$profiles      = Netbird\listProfiles();
-$activeProf    = Netbird\activeProfile();
+$enableCfg     = strtolower(trim((string) $enabled));
+$serviceEnabled = !in_array($enableCfg, ['0', 'false'], true);
+$daemonReady   = $serviceEnabled && Netbird\daemonRunning() && file_exists('/var/run/netbird.sock');
+$profiles      = $daemonReady ? Netbird\listProfiles() : [];
+if (!$profiles) {
+    $profiles = Netbird\savedProfiles();
+}
+$activeProf = '';
+foreach ($profiles as $profile) {
+    if ($profile['active']) {
+        $activeProf = $profile['name'];
+        break;
+    }
+}
 
 // Which profile's credentials is the form editing? ?nbprofile= wins, then the
 // active profile, then "default" (NetBird's built-in profile).
@@ -28,7 +40,19 @@ if (!Netbird\validProfileName($editProf)) {
     $editProf = '';
 }
 if ($editProf === '') {
-    $editProf = $activeProf !== '' ? $activeProf : 'default';
+    $editProf = $activeProf;
+    if ($editProf === '' && $profiles) {
+        $editProf = $profiles[0]['name'];
+        foreach ($profiles as $profile) {
+            if ($profile['name'] === 'default') {
+                $editProf = 'default';
+                break;
+            }
+        }
+    }
+    if ($editProf === '') {
+        $editProf = 'default';
+    }
 }
 
 // Credentials are stored per profile (profiles/<name>.cfg), not globally.
@@ -61,14 +85,20 @@ $preSharedKey  = $creds['PRESHARED_KEY'];
                 </option>
             <?php endforeach; ?>
         </select>
-        <input type="button" value="_(Switch)_" onclick="nbProfile('select', $('#nb-profile-select').val())">
-        <input type="button" value="_(Delete)_" onclick="nbProfileDelete()">
+        <?php if ($daemonReady): ?>
+            <input type="button" value="_(Switch)_" onclick="nbProfile('select', $('#nb-profile-select').val())">
+            <input type="button" value="_(Delete)_" onclick="nbProfileDelete()">
+        <?php endif; ?>
     <?php else: ?>
-        <span class="nb-profile-empty">No profiles found yet — editing <code><?=htmlspecialchars($editProf)?></code>. Start the daemon and add one below.</span>
+        <span class="nb-profile-empty">No saved profiles yet — editing <code><?=htmlspecialchars($editProf)?></code>.</span>
     <?php endif; ?>
-    &nbsp;&nbsp;
-    <input type="text" id="nb-profile-new" placeholder="new-profile-name" maxlength="32">
-    <input type="button" value="_(+ Add)_" onclick="nbProfileAdd()">
+    <?php if ($daemonReady): ?>
+        &nbsp;&nbsp;
+        <input type="text" id="nb-profile-new" placeholder="new-profile-name" maxlength="32">
+        <input type="button" value="_(+ Add)_" onclick="nbProfileAdd()">
+    <?php else: ?>
+        <span class="nb-profile-empty">Profile controls are available while NetBird is running.</span>
+    <?php endif; ?>
 </div>
 
 <blockquote class="inline_help">

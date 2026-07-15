@@ -3,11 +3,15 @@ try {
 $docroot = $docroot ?? $_SERVER['DOCUMENT_ROOT'] ?: '/usr/local/emhttp';
 require_once "{$docroot}/plugins/netbird/include/common.php";
 
-$running = Netbird\daemonRunning();
-$status  = Netbird\statusJson();
+$cfg       = Netbird\readCfg();
+$enableCfg = strtolower(trim((string) ($cfg['ENABLE_NETBIRD'] ?? '0')));
+$enabled   = !in_array($enableCfg, ['0', 'false'], true);
+$running   = Netbird\daemonRunning();
+$daemonReady = $enabled && $running && file_exists('/var/run/netbird.sock');
+$status    = $daemonReady ? Netbird\statusJson() : null;
 
 // Whether the plugin lets NetBird manage host DNS (MANAGE_DNS, default on).
-$manageDns = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
+$manageDns = ($cfg['MANAGE_DNS'] ?? '1') === '1';
 
 // The host's live resolver, so issue #2 ("NetBird took over my DNS") is visible
 // at a glance: when management is on, NetBird rewrites this to point at its own
@@ -19,8 +23,8 @@ if ($resolvRaw !== false && preg_match_all('/^\s*nameserver\s+(\S+)/mi', $resolv
 }
 
 $rawStatus = '';
-if (!$status) {
-    [$rc, $out] = Netbird\nb(['status']);
+if ($daemonReady && !$status) {
+    [$rc, $out] = Netbird\nb(['status'], 3);
     $rawStatus  = $out;
 }
 ?>
