@@ -51,7 +51,7 @@ function nb(array $args, int $timeoutSec = 0): array
  */
 function statusJson(): ?array
 {
-    [$rc, $out] = nb(['status', '--json']);
+    [$rc, $out] = nb(['status', '--json'], 3);
     if ($rc !== 0 || $out === '') {
         return null;
     }
@@ -130,7 +130,7 @@ function readApplyResult(): ?array
  */
 function listProfiles(): array
 {
-    [$rc, $out] = nb(['profile', 'list']);
+    [$rc, $out] = nb(['profile', 'list'], 3);
     if ($rc !== 0) {
         return [];
     }
@@ -149,6 +149,27 @@ function listProfiles(): array
             ];
         }
     }
+    return $profiles;
+}
+
+/**
+ * List profiles with credentials saved by the plugin without contacting the
+ * daemon. This keeps the Settings page usable while NetBird is disabled.
+ *
+ * @return array<int, array{name:string, active:bool}>
+ */
+function savedProfiles(): array
+{
+    $profiles = [];
+    foreach (glob(PROFILE_DIR . '/*.cfg') ?: [] as $path) {
+        $name = pathinfo($path, PATHINFO_FILENAME);
+        if (validProfileName($name)) {
+            $profiles[] = ['name' => $name, 'active' => false];
+        }
+    }
+    usort($profiles, static function (array $a, array $b): int {
+        return strcasecmp($a['name'], $b['name']);
+    });
     return $profiles;
 }
 
