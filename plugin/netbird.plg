@@ -11,10 +11,10 @@
 <!ENTITY emhttpLOC   "/usr/local/emhttp/plugins/&name;">
 
 <!-- NetBird upstream binary -->
-<!ENTITY netbirdVer    "0.75.0">
+<!ENTITY netbirdVer    "0.75.1">
 <!ENTITY netbirdFile   "netbird_&netbirdVer;_linux_amd64.tar.gz">
 <!ENTITY netbirdURL    "https://github.com/netbirdio/netbird/releases/download/v&netbirdVer;/&netbirdFile;">
-<!ENTITY netbirdSHA256 "166438a7bbf19354c65128432140a26b7663945affaf8700c388113280e2d202">
+<!ENTITY netbirdSHA256 "fe42d049a2d019bc55e787b423cd542edbd0765098002b4ab5b5fe19086a3406">
 
 <!-- Plugin support package (built from src/) -->
 <!ENTITY pkgName       "unraid-netbird-utils">
