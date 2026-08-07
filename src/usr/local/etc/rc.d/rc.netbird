@@ -74,7 +74,7 @@ start_netbird() {
     rm -f "$SOCKFILE" "$HTTPSOCKFILE"
 
     # JSON gateway (NetBird >= 0.75): expose the daemon gRPC API as JSON over a
-    # root-only unix socket so the web UI can query it without exec'ing the CLI.
+    # unix socket so the web UI can query it without exec'ing the CLI.
     # Guarded on flag support so an older sideloaded binary still starts.
     JSON_ARGS=""
     if "$DAEMON" service run --help 2>/dev/null | grep -q "enable-json-socket"; then
@@ -109,6 +109,16 @@ start_netbird() {
     done
 
     if [ -S "$SOCKFILE" ] && is_running ; then
+        # Tighten the JSON socket to root-only. NetBird chmods its unix sockets
+        # to 0666 shortly after binding (peer-credential auth only guards
+        # privileged config changes there — ops like Down or RemoveProfile are
+        # open to any local user), and nothing but root's web UI needs this
+        # socket on Unraid. Re-apply after a beat in case our first chmod ran
+        # before the daemon's own.
+        if [ -S "$HTTPSOCKFILE" ]; then
+            chmod 600 "$HTTPSOCKFILE" 2>/dev/null
+            ( sleep 2; chmod 600 "$HTTPSOCKFILE" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+        fi
         log "NetBird daemon socket is up."
         return 0
     fi

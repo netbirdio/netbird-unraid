@@ -240,10 +240,27 @@ switch ($action) {
             Netbird\writeProfileCfg($name, []);
         }
         Netbird\nbUnlock($lock);
+        $msg = $out ?: ($ok ? "Profile '$name' added." : 'profile add returned an error.');
+        // NetBird allows duplicate display names, and the CLI warns right after
+        // an add when the name is already taken — the gateway path must surface
+        // that too, since the plugin keys credential files and later
+        // select/remove requests by display name. $out is '' only on gateway
+        // success; on the CLI fallback its own output already carries the
+        // warning.
+        if ($ok && $out === '') {
+            $dups = count(array_filter(
+                Netbird\listProfiles(),
+                static fn (array $p): bool => $p['name'] === $name
+            ));
+            if ($dups > 1) {
+                $msg .= "\nWarning: " . ($dups - 1)
+                     . " other profile(s) already use this name; operations by name may be ambiguous.";
+            }
+        }
         echo json_encode([
             'type'    => $ok ? 'success' : 'error',
             'title'   => $ok ? 'Profile added' : 'Add failed',
-            'message' => $out ?: ($ok ? "Profile '$name' added." : 'profile add returned an error.'),
+            'message' => $msg,
             'profile' => $ok ? $name : null,
         ]);
         break;

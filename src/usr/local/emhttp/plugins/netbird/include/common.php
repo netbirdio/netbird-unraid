@@ -47,8 +47,10 @@ function nb(array $args, int $timeoutSec = 0): array
 // ---------------------------------------------------------------------------
 // Daemon HTTP/JSON gateway (NetBird >= 0.75, daemon started with
 // --enable-json-socket by rc.netbird). Exposes the daemon gRPC API as
-// POST /daemon.DaemonService/<Method> with protobuf-JSON bodies over a
-// root-only unix socket — structured data without exec()'ing the CLI.
+// POST /daemon.DaemonService/<Method> with protobuf-JSON bodies over a unix
+// socket — structured data without exec()'ing the CLI. NetBird itself chmods
+// the socket 0666 (relying on peer-credential auth for privileged config
+// changes only); rc.netbird tightens it to root-only 0600 after start.
 // ---------------------------------------------------------------------------
 
 const HTTP_SOCK = '/var/run/netbird-http.sock';
@@ -96,16 +98,17 @@ function apiCall(string $method, array $body = [], int $timeoutSec = 10): array
     curl_close($ch);
 
     if ($raw === false) {
-        // A timeout means the daemon accepted the request but didn't answer in
-        // time — it may still be executing the call, so report it reachable to
-        // keep nb_api_or_cli() from re-issuing the operation through the CLI.
-        // Other curl failures (connect refused, etc.) mean the gateway isn't
-        // usable and the CLI fallback is safe.
+        // Only a definite connect-phase failure proves the daemon never saw
+        // the request, making a CLI fallback safe. Anything later — timeout,
+        // send/recv error, empty reply — may have delivered the request, and
+        // the daemon may have executed (or still be executing) it, so report
+        // the gateway reachable to keep nb_api_or_cli() from replaying the
+        // operation through the CLI.
         return [
             'ok'        => false,
             'data'      => null,
             'error'     => "gateway request failed (curl errno $errno)",
-            'reachable' => $errno === CURLE_OPERATION_TIMEDOUT,
+            'reachable' => $errno !== CURLE_COULDNT_CONNECT,
         ];
     }
     $decoded = json_decode((string) $raw, true);
@@ -197,26 +200,31 @@ function mapGatewayStatus(array $resp, string $profileName): array
         if (!is_array($p)) {
             continue;
         }
-        $state = (string) ($p['connStatus'] ?? '');
-        if ($state === 'Connected') {
+        $state  = (string) ($p['connStatus'] ?? '');
+        $isConn = $state === 'Connected';
+        if ($isConn) {
             $connected++;
         }
+        // Mirror the CLI mapper: connection details are only meaningful for a
+        // connected peer — on others the daemon reports stale leftovers, which
+        // the CLI blanks (connectionType "-", empty ICE/relay/handshake/
+        // transfer). Latency and networks are unconditional there too.
         $peers[] = [
             'fqdn'             => $p['fqdn'] ?? '',
             'netbirdIp'        => pbGet($p, ['IP', 'ip'], ''),
             'netbirdIpv6'      => $p['ipv6'] ?? '',
             'status'           => $state,
-            'connectionType'   => !empty($p['relayed']) ? 'Relayed' : 'P2P',
+            'connectionType'   => $isConn ? (!empty($p['relayed']) ? 'Relayed' : 'P2P') : '-',
             'iceCandidateType' => [
-                'local'  => $p['localIceCandidateType']  ?? '',
-                'remote' => $p['remoteIceCandidateType'] ?? '',
+                'local'  => $isConn ? ($p['localIceCandidateType']  ?? '') : '',
+                'remote' => $isConn ? ($p['remoteIceCandidateType'] ?? '') : '',
             ],
-            'relayAddress'     => $p['relayAddress'] ?? '',
+            'relayAddress'     => $isConn ? ($p['relayAddress'] ?? '') : '',
             'latency'          => pbDurationNs($p['latency'] ?? null),
-            'lastWireguardHandshake' => pbTimestamp($p['lastWireguardHandshake'] ?? null),
+            'lastWireguardHandshake' => $isConn ? pbTimestamp($p['lastWireguardHandshake'] ?? null) : null,
             // int64 arrives as a JSON string per the protobuf JSON mapping.
-            'transferReceived' => (int) ($p['bytesRx'] ?? 0),
-            'transferSent'     => (int) ($p['bytesTx'] ?? 0),
+            'transferReceived' => $isConn ? (int) ($p['bytesRx'] ?? 0) : 0,
+            'transferSent'     => $isConn ? (int) ($p['bytesTx'] ?? 0) : 0,
             'networks'         => $p['networks'] ?? [],
         ];
     }
