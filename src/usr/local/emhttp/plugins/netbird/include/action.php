@@ -157,11 +157,13 @@ switch ($action) {
             }
         }
         // Bring up the currently-active profile using its own stored credentials.
+        // Deliberately CLI, not the gateway's SwitchProfile RPC: the CLI also
+        // records the switch in its own per-user active-profile state, which the
+        // following CLI `up` reads to decide which profile to connect (see the
+        // profile-select case for the full picture).
         $active = Netbird\activeProfile();
         if ($active !== '') {
-            nb_api_or_cli('SwitchProfile',
-                ['profileName' => $active, 'username' => Netbird\apiUsername()],
-                ['profile', 'select', $active]);
+            Netbird\nb(['profile', 'select', $active], 15);
         }
         // Refuse to connect a profile that was never registered (no stored key) —
         // `up` would otherwise drop into interactive SSO login, which we don't use.
@@ -289,10 +291,14 @@ switch ($action) {
             ]);
             break;
         }
-        [$okSel, $outSel] = nb_api_or_cli('SwitchProfile',
-            ['profileName' => $name, 'username' => Netbird\apiUsername()],
-            ['profile', 'select', $name], 15);
-        if (!$okSel) {
+        // Deliberately CLI, not the gateway's SwitchProfile RPC. `netbird
+        // profile select` does more than the RPC: it records the switch in the
+        // CLI's own per-user active-profile state and runs `down` first when
+        // connected. The follow-up CLI `up` resolves its target profile from
+        // that CLI-side state, so a daemon-only switch would leave `up`
+        // reconnecting the PREVIOUS profile with this profile's credentials.
+        [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $name], 15);
+        if ($rcSel !== 0) {
             Netbird\nbUnlock($lock);
             echo json_encode([
                 'type'    => 'error',
