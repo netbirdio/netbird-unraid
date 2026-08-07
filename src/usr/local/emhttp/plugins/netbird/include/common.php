@@ -408,9 +408,13 @@ function readApplyResult(): ?array
 function listProfiles(): array
 {
     $res = apiCall('ListProfiles', ['username' => apiUsername()], 3);
-    if ($res['ok'] && is_array($res['data']['profiles'] ?? null)) {
+    if ($res['ok']) {
+        // protojson omits empty repeated fields, so a daemon with zero
+        // profiles answers {} — still a successful response, not a reason
+        // to fall back to the CLI.
+        $list = $res['data']['profiles'] ?? [];
         $profiles = [];
-        foreach ($res['data']['profiles'] as $p) {
+        foreach ((is_array($list) ? $list : []) as $p) {
             if (is_array($p) && isset($p['name'])) {
                 $profiles[] = [
                     'name'   => (string) $p['name'],
