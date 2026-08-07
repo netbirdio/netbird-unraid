@@ -163,7 +163,19 @@ switch ($action) {
         // profile-select case for the full picture).
         $active = Netbird\activeProfile();
         if ($active !== '') {
-            Netbird\nb(['profile', 'select', $active], 15);
+            [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $active], 15);
+            // A failed select leaves the CLI's active-profile state possibly
+            // pointing at another profile; running `up` with $active's
+            // credentials anyway could apply them to the wrong profile.
+            if ($rcSel !== 0) {
+                Netbird\nbUnlock($lock);
+                echo json_encode([
+                    'type'    => 'error',
+                    'title'   => 'Profile select failed',
+                    'message' => $outSel ?: "Could not select profile '$active'.",
+                ]);
+                break;
+            }
         }
         // Refuse to connect a profile that was never registered (no stored key) —
         // `up` would otherwise drop into interactive SSO login, which we don't use.
