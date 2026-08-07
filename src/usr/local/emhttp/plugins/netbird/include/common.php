@@ -96,7 +96,17 @@ function apiCall(string $method, array $body = [], int $timeoutSec = 10): array
     curl_close($ch);
 
     if ($raw === false) {
-        return ['ok' => false, 'data' => null, 'error' => "gateway request failed (curl errno $errno)", 'reachable' => false];
+        // A timeout means the daemon accepted the request but didn't answer in
+        // time — it may still be executing the call, so report it reachable to
+        // keep nb_api_or_cli() from re-issuing the operation through the CLI.
+        // Other curl failures (connect refused, etc.) mean the gateway isn't
+        // usable and the CLI fallback is safe.
+        return [
+            'ok'        => false,
+            'data'      => null,
+            'error'     => "gateway request failed (curl errno $errno)",
+            'reachable' => $errno === CURLE_OPERATION_TIMEDOUT,
+        ];
     }
     $decoded = json_decode((string) $raw, true);
     if ($http !== 200) {
