@@ -200,7 +200,7 @@ switch ($action) {
         echo json_encode([
             'type'    => $ok ? 'success' : 'error',
             'title'   => $ok ? 'Disconnected' : 'NetBird down failed',
-            'message' => $out ?: 'NetBird disconnected.',
+            'message' => $out ?: ($ok ? 'NetBird disconnected.' : 'netbird down returned an error.'),
         ]);
         break;
 
@@ -241,7 +241,7 @@ switch ($action) {
         echo json_encode([
             'type'    => $ok ? 'success' : 'error',
             'title'   => $ok ? 'Profile added' : 'Add failed',
-            'message' => $out ?: "Profile '$name' added.",
+            'message' => $out ?: ($ok ? "Profile '$name' added." : 'profile add returned an error.'),
             'profile' => $ok ? $name : null,
         ]);
         break;
@@ -265,7 +265,7 @@ switch ($action) {
         echo json_encode([
             'type'    => $ok ? 'success' : 'error',
             'title'   => $ok ? 'Profile removed' : 'Remove failed',
-            'message' => $out ?: "Profile '$name' removed.",
+            'message' => $out ?: ($ok ? "Profile '$name' removed." : 'profile remove returned an error.'),
         ]);
         break;
 
