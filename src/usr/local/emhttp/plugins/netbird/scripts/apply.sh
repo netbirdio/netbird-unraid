@@ -134,7 +134,9 @@ if [ "$MODE" = "ensure" ]; then
     # when the daemon predates it or was started without the socket.
     ACTIVE=$(nb_api GetActiveProfile | sed -n 's/.*"profileName":"\([^"]*\)".*/\1/p')
     [ -n "$ACTIVE" ] || ACTIVE=$("$NB" profile list 2>/dev/null | awk '/^✓/{print $2}')
-    STATUS_JSON=$(nb_api Status)
+    # getFullPeerStatus is required: without it the daemon omits fullStatus
+    # (and with it managementState) from the response entirely.
+    STATUS_JSON=$(nb_api Status '{"getFullPeerStatus":true}')
     if [ -n "$STATUS_JSON" ]; then
         # protojson omits false booleans, so "connected":true is only ever
         # present inside managementState when management really is connected.
