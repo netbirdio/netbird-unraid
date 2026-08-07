@@ -64,7 +64,10 @@ function nb_profile_unconfigured(string $name): bool
  */
 function nb_api_or_cli(string $method, array $body, array $cliArgs, int $timeoutSec = 0): array
 {
-    $res = Netbird\apiCall($method, $body, $timeoutSec > 0 ? $timeoutSec : 10);
+    // Normalize once so the CLI fallback is bounded by the same effective
+    // timeout as the gateway attempt — nb() runs unbounded when passed 0.
+    $timeoutSec = $timeoutSec > 0 ? $timeoutSec : 10;
+    $res = Netbird\apiCall($method, $body, $timeoutSec);
     if ($res['ok']) {
         return [true, ''];
     }
