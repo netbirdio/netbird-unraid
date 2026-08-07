@@ -11,6 +11,8 @@ LOGFILE=/var/log/netbird.log
 PIDFILE=/var/run/netbird.pid
 SOCKFILE=/var/run/netbird.sock
 DAEMON_ADDR="unix://${SOCKFILE}"
+HTTPSOCKFILE=/var/run/netbird-http.sock
+JSON_SOCK_ADDR="unix://${HTTPSOCKFILE}"
 DEFAULT_CFG=/usr/local/emhttp/plugins/netbird/default.cfg
 GLOBAL_CFG=/boot/config/plugins/netbird/netbird.cfg
 
@@ -66,12 +68,20 @@ start_netbird() {
         EXTRA_ARGS="$NETBIRD_CUSTOM_PARAMS"
     fi
 
-    # Remove a stale socket left by an unclean exit. NetBird can't bind a socket
+    # Remove stale sockets left by an unclean exit. NetBird can't bind a socket
     # path that already exists on disk and exits immediately, which is why a
     # start right after a crash or hard kill would otherwise silently fail.
-    rm -f "$SOCKFILE"
+    rm -f "$SOCKFILE" "$HTTPSOCKFILE"
 
-    log "Starting netbird: $DAEMON service run --daemon-addr $DAEMON_ADDR --log-file $LOGFILE $EXTRA_ARGS"
+    # JSON gateway (NetBird >= 0.75): expose the daemon gRPC API as JSON over a
+    # root-only unix socket so the web UI can query it without exec'ing the CLI.
+    # Guarded on flag support so an older sideloaded binary still starts.
+    JSON_ARGS=""
+    if "$DAEMON" service run --help 2>/dev/null | grep -q "enable-json-socket"; then
+        JSON_ARGS="--enable-json-socket --json-socket $JSON_SOCK_ADDR"
+    fi
+
+    log "Starting netbird: $DAEMON service run --daemon-addr $DAEMON_ADDR --log-file $LOGFILE $JSON_ARGS $EXTRA_ARGS"
     mkdir -p /var/lib/netbird /etc/netbird
     # 9>&- drops the serialization lock descriptor before handing off to the
     # daemon. Without it the long-lived daemon inherits the lock and holds it
@@ -84,6 +94,7 @@ start_netbird() {
     nohup "$DAEMON" service run \
         --daemon-addr "$DAEMON_ADDR" \
         --log-file "$LOGFILE" \
+        $JSON_ARGS \
         $EXTRA_ARGS >>"$LOGFILE" 2>&1 9>&- &
     echo $! > "$PIDFILE"
 
@@ -123,7 +134,7 @@ stop_netbird() {
 
     if [ -z "$pids" ]; then
         log "NetBird daemon not running."
-        rm -f "$PIDFILE" "$SOCKFILE"
+        rm -f "$PIDFILE" "$SOCKFILE" "$HTTPSOCKFILE"
         return 0
     fi
 
@@ -161,9 +172,9 @@ stop_netbird() {
         log "ERROR: NetBird daemon could not be stopped."
         return 1
     fi
-    # Clear the socket only once the daemon is confirmed gone, so we never strip
-    # the socket out from under a daemon that is still serving.
-    rm -f "$SOCKFILE"
+    # Clear the sockets only once the daemon is confirmed gone, so we never
+    # strip a socket out from under a daemon that is still serving.
+    rm -f "$SOCKFILE" "$HTTPSOCKFILE"
     return 0
 }
 

@@ -38,6 +38,20 @@ GLOBAL_CFG=/boot/config/plugins/netbird/netbird.cfg
 PROFILE_CFG="/boot/config/plugins/netbird/profiles/${PROFILE}.cfg"
 LOCK_FILE=/var/run/netbird-apply.lock
 RESULT_FILE=/var/run/netbird-apply-result.json
+HTTP_SOCK=/var/run/netbird-http.sock
+
+# Query the daemon's JSON gateway (NetBird >= 0.75, rc.netbird starts it with
+# --enable-json-socket). $1 = method, $2 = JSON body (default {}). Prints the
+# response body; fails when the gateway socket isn't up so callers can fall
+# back to scraping CLI text.
+nb_api() {
+    [ -S "$HTTP_SOCK" ] || return 1
+    _body="${2:-}"
+    [ -n "$_body" ] || _body='{}'
+    curl -sf --max-time 3 --unix-socket "$HTTP_SOCK" \
+         -H 'Content-Type: application/json' -d "$_body" \
+         "http://localhost/daemon.DaemonService/$1" 2>/dev/null
+}
 
 # Record the outcome for the UI poller. $1 = true|false|null, $2 = short message.
 # All values are controlled (profile name is validated upstream; messages are
@@ -116,8 +130,19 @@ done
 # and the daemon is connected, there's nothing to apply — skip the select+up so
 # a no-op save doesn't needlessly bounce the connection.
 if [ "$MODE" = "ensure" ]; then
-    ACTIVE=$("$NB" profile list 2>/dev/null | awk '/^✓/{print $2}')
-    if [ "$ACTIVE" = "$PROFILE" ] && "$NB" status 2>/dev/null | grep -q "Management: Connected"; then
+    # Prefer the JSON gateway for both checks; fall back to scraping CLI text
+    # when the daemon predates it or was started without the socket.
+    ACTIVE=$(nb_api GetActiveProfile | sed -n 's/.*"profileName":"\([^"]*\)".*/\1/p')
+    [ -n "$ACTIVE" ] || ACTIVE=$("$NB" profile list 2>/dev/null | awk '/^✓/{print $2}')
+    STATUS_JSON=$(nb_api Status)
+    if [ -n "$STATUS_JSON" ]; then
+        # protojson omits false booleans, so "connected":true is only ever
+        # present inside managementState when management really is connected.
+        MGMT_UP=$(printf '%s' "$STATUS_JSON" | grep -o '"managementState":{[^}]*}' | grep -c '"connected":true')
+    else
+        MGMT_UP=$("$NB" status 2>/dev/null | grep -c "Management: Connected")
+    fi
+    if [ "$ACTIVE" = "$PROFILE" ] && [ "$MGMT_UP" -ge 1 ]; then
         log "No credential change and '$PROFILE' already active+connected; nothing to apply."
         write_result true "no change (already connected)"
         exit 0
