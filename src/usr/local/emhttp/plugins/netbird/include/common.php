@@ -289,6 +289,20 @@ function mapGatewayStatus(array $resp, string $profileName): array
 }
 
 /**
+ * Version of the installed netbird binary (`netbird version`, purely local —
+ * no daemon round-trip), or '' if unknown. Cached for the request.
+ */
+function cliVersion(): string
+{
+    static $ver = null;
+    if ($ver === null) {
+        [$rc, $out] = nb(['version'], 3);
+        $ver = $rc === 0 ? trim(explode("\n", $out)[0]) : '';
+    }
+    return $ver;
+}
+
+/**
  * Read JSON status. Returns null if daemon unreachable or output isn't JSON.
  * Prefers the JSON gateway; falls back to CLI `status --json` (covers daemons
  * started without --enable-json-socket, e.g. across a plugin upgrade that
@@ -305,7 +319,13 @@ function statusJson(): ?array
         if ($ap['ok']) {
             $profile = (string) ($ap['data']['profileName'] ?? '');
         }
-        return mapGatewayStatus($res['data'], $profile);
+        $mapped = mapGatewayStatus($res['data'], $profile);
+        // `status --json` reports the invoking binary's version as cliVersion;
+        // the gateway response has no equivalent, so ask the binary directly.
+        // The dashboard compares it against daemonVersion for its
+        // "restart pending" hint after a plugin upgrade.
+        $mapped['cliVersion'] = cliVersion();
+        return $mapped;
     }
 
     [$rc, $out] = nb(['status', '--json'], 3);
