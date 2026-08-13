@@ -16,11 +16,13 @@ chmod 0644 etc/logrotate.d/netbird
 chown root:root etc/logrotate.d/netbird
 
 # Event hooks: reconcile the daemon when the array starts (rc.netbird keeps a
-# disabled installation stopped).
+# disabled installation stopped). Only array_started is wired up — "started"
+# also fires on a normal boot, so hooking both gave us two redundant triggers
+# on top of the plugin reinstall. The rm clears the stale "started" link left
+# by older installs.
 ( cd usr/local/emhttp/plugins/netbird/event
   rm -f array_started stopped started stopping_svcs
-  ln -sf ../restart.sh array_started
-  ln -sf ../restart.sh started
+  ln -sf ../reconcile.sh array_started
 )
 
 # Make all *.sh executable inside the page tree

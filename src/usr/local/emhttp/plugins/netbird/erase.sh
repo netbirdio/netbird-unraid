@@ -14,4 +14,5 @@ rm -rf /boot/config/plugins/netbird/profiles
 rm -f  /boot/config/plugins/netbird/netbird.cfg
 
 log "Restarting NetBird"
-echo "sleep 5 ; /etc/rc.d/rc.netbird restart" | at now 2>/dev/null
+nohup /bin/sh -c 'sleep 5 ; /etc/rc.d/rc.netbird restart' >/dev/null 2>&1 </dev/null &
+disown 2>/dev/null || true

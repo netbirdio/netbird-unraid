@@ -73,10 +73,13 @@ start_netbird() {
 
     log "Starting netbird: $DAEMON service run --daemon-addr $DAEMON_ADDR --log-file $LOGFILE $EXTRA_ARGS"
     mkdir -p /var/lib/netbird /etc/netbird
+    # 9>&- drops the serialization lock descriptor before handing off to the
+    # daemon. Without it the long-lived daemon inherits the lock and holds it
+    # until it exits, wedging every subsequent start/stop/restart.
     nohup "$DAEMON" service run \
         --daemon-addr "$DAEMON_ADDR" \
         --log-file "$LOGFILE" \
-        $EXTRA_ARGS >>"$LOGFILE" 2>&1 &
+        $EXTRA_ARGS >>"$LOGFILE" 2>&1 9>&- &
     echo $! > "$PIDFILE"
 
     # Wait for the socket, but bail early if the process dies (e.g. a bind
@@ -176,6 +179,33 @@ status_netbird() {
         return 1
     fi
 }
+
+# Serialize the mutating verbs. Boot fires several triggers within seconds of
+# each other (Unraid reinstalls every plugin at startup, then the array_started
+# event lands), and without a lock one invocation's stop — which allows ~6s for
+# a graceful exit and up to ~10s more to escalate — lands on the daemon another
+# invocation just started. Two daemons then race for the socket, and that
+# interleave is what reads as a restart loop. "status" deliberately stays
+# outside the lock so the WebGUI never blocks behind an in-flight restart.
+#
+# The lock is held on an explicit descriptor we control rather than via the
+# "flock <file> <command>" wrapper form. That form leaves its descriptor open
+# across the exec without FD_CLOEXEC, so the daemon started underneath it
+# inherits the lock and holds it for its entire lifetime — every later
+# start/stop then blocks until the timeout expires and gives up. start_netbird
+# closes this descriptor for the daemon it launches, for the same reason.
+LOCKFILE=/var/run/netbird-rc.lock
+case "$1" in
+    start|stop|restart)
+        if [ -x /usr/bin/flock ]; then
+            exec 9>"$LOCKFILE"
+            if ! /usr/bin/flock -w 120 9 ; then
+                log "ERROR: timed out waiting for another netbird $1 to finish."
+                exit 1
+            fi
+        fi
+        ;;
+esac
 
 case "$1" in
     start)   start_netbird   ;;
