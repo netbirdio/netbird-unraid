@@ -6,7 +6,7 @@ unraid-netbird-utils: pages required to run the NetBird WireGuard-mesh client na
 unraid-netbird-utils: Unraid OS as a system plugin.
 unraid-netbird-utils:
 unraid-netbird-utils: NetBird upstream: https://netbird.io
-unraid-netbird-utils: Plugin source:   https://github.com/techhutus/netbird-unraid
+unraid-netbird-utils: Plugin source:   https://github.com/netbirdio/netbird-unraid
 unraid-netbird-utils:
 unraid-netbird-utils:
 unraid-netbird-utils:
