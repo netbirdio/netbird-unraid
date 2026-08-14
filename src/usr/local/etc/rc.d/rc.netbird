@@ -117,7 +117,9 @@ start_netbird() {
         # before the daemon's own.
         if [ -S "$HTTPSOCKFILE" ]; then
             chmod 600 "$HTTPSOCKFILE" 2>/dev/null
-            ( sleep 2; chmod 600 "$HTTPSOCKFILE" 2>/dev/null ) >/dev/null 2>&1 </dev/null &
+            # 9>&- so this short-lived watcher doesn't inherit the rc lock
+            # descriptor and extend the lock ~2s past our own exit.
+            ( sleep 2; chmod 600 "$HTTPSOCKFILE" 2>/dev/null ) >/dev/null 2>&1 </dev/null 9>&- &
         fi
         log "NetBird daemon socket is up."
         return 0
