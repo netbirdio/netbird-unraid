@@ -234,7 +234,26 @@ fi
 # first nginx reload once wt0 appears.
 if [ "$NETBIRD_EXISTING" = "1" ] || [ "$NETBIRD_HAD_CFG" = "1" ]; then
     if [ "$NETBIRD_ENABLE_AFTER_INSTALL" = "1" ]; then
-        /etc/rc.d/rc.netbird restart
+        # Only restart when the service daemon is actually live on the binary we
+        # just replaced. Match it the way rc.netbird's running_pids does — by
+        # executable name plus a "service run" command line — so a transient
+        # netbird CLI call (a status poll from the WebGUI during an upgrade, for
+        # instance) is never mistaken for a running daemon. Unraid reinstalls
+        # every plugin at boot, and there nothing is running yet, so a restart
+        # would just be a no-op stop followed by a start, colliding with the
+        # array_started reconcile moments later.
+        NETBIRD_DAEMON_UP=0
+        for _p in $(/usr/bin/pgrep -x netbird 2>/dev/null); do
+            if tr '\0' ' ' < "/proc/$_p/cmdline" 2>/dev/null | grep -q "service run"; then
+                NETBIRD_DAEMON_UP=1
+                break
+            fi
+        done
+        if [ "$NETBIRD_DAEMON_UP" = "1" ]; then
+            /etc/rc.d/rc.netbird restart
+        else
+            /etc/rc.d/rc.netbird start
+        fi
         (
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
                 if ip -4 addr show wt0 >/dev/null 2>&1; then

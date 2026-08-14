@@ -1,4 +1,7 @@
 This directory is populated at install time by ../install/doinst.sh.
 Expected symlinks:
-  array_started -> ../restart.sh
-  started       -> ../restart.sh
+  array_started -> ../reconcile.sh
+
+Only array_started is hooked. "started" fires on every array start as well
+(just later, once services are up), so wiring both ran the same trigger twice
+per array start, on top of the plugin's own boot-time reinstall.
