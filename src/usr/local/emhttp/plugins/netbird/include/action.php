@@ -52,6 +52,33 @@ function nb_profile_unconfigured(string $name): bool
 }
 
 /**
+ * Run a daemon operation through the JSON gateway when available, falling
+ * back to the CLI when the gateway can't be reached. Application-level
+ * errors from the gateway are surfaced as-is (no CLI retry — the daemon
+ * already answered). Returns [ok, message]; message is the gateway error
+ * text or the raw CLI output ('' on gateway success).
+ *
+ * @param array<string,mixed> $body
+ * @param string[] $cliArgs
+ * @return array{0:bool,1:string}
+ */
+function nb_api_or_cli(string $method, array $body, array $cliArgs, int $timeoutSec = 0): array
+{
+    // Normalize once so the CLI fallback is bounded by the same effective
+    // timeout as the gateway attempt — nb() runs unbounded when passed 0.
+    $timeoutSec = $timeoutSec > 0 ? $timeoutSec : 10;
+    $res = Netbird\apiCall($method, $body, $timeoutSec);
+    if ($res['ok']) {
+        return [true, ''];
+    }
+    if ($res['reachable']) {
+        return [false, $res['error']];
+    }
+    [$rc, $out] = Netbird\nb($cliArgs, $timeoutSec);
+    return [$rc === 0, $out];
+}
+
+/**
  * Acquire the apply lock, or emit a "busy" JSON response and return false.
  * Serializes daemon-mutating actions with each other and with apply.sh so
  * concurrent ops don't cancel each other.
@@ -130,9 +157,25 @@ switch ($action) {
             }
         }
         // Bring up the currently-active profile using its own stored credentials.
+        // Deliberately CLI, not the gateway's SwitchProfile RPC: the CLI also
+        // records the switch in its own per-user active-profile state, which the
+        // following CLI `up` reads to decide which profile to connect (see the
+        // profile-select case for the full picture).
         $active = Netbird\activeProfile();
         if ($active !== '') {
-            Netbird\nb(['profile', 'select', $active]);
+            [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $active], 15);
+            // A failed select leaves the CLI's active-profile state possibly
+            // pointing at another profile; running `up` with $active's
+            // credentials anyway could apply them to the wrong profile.
+            if ($rcSel !== 0) {
+                Netbird\nbUnlock($lock);
+                echo json_encode([
+                    'type'    => 'error',
+                    'title'   => 'Profile select failed',
+                    'message' => $outSel ?: "Could not select profile '$active'.",
+                ]);
+                break;
+            }
         }
         // Refuse to connect a profile that was never registered (no stored key) —
         // `up` would otherwise drop into interactive SSO login, which we don't use.
@@ -150,6 +193,10 @@ switch ($action) {
         // Reconnect uses the profile's stored identity; no setup key needed here
         // (a key is only required to register, which happens on save). Bounded so
         // a failing reconnect's retry/backoff can't hang the request.
+        // Deliberately CLI (not the JSON gateway): `up` folds the credential
+        // flags into the profile config and drives login/registration; the
+        // gateway's UpRequest only takes a profile name, so it can't replace
+        // this call without reimplementing SetConfig+Login here.
         [$rc, $out] = Netbird\nb(nb_up_args($creds), 90);
         Netbird\nbUnlock($lock);
         echo json_encode([
@@ -162,12 +209,12 @@ switch ($action) {
     case 'down':
         $lock = nb_lock_or_busy();
         if ($lock === false) { break; }
-        [$rc, $out] = Netbird\nb(['down']);
+        [$ok, $out] = nb_api_or_cli('Down', [], ['down'], 30);
         Netbird\nbUnlock($lock);
         echo json_encode([
-            'type'    => $rc === 0 ? 'success' : 'error',
-            'title'   => $rc === 0 ? 'Disconnected' : 'NetBird down failed',
-            'message' => $out ?: 'NetBird disconnected.',
+            'type'    => $ok ? 'success' : 'error',
+            'title'   => $ok ? 'Disconnected' : 'NetBird down failed',
+            'message' => $out ?: ($ok ? 'NetBird disconnected.' : 'netbird down returned an error.'),
         ]);
         break;
 
@@ -196,18 +243,37 @@ switch ($action) {
         }
         $lock = nb_lock_or_busy();
         if ($lock === false) { break; }
-        [$rc, $out] = Netbird\nb(['profile', 'add', $name]);
-        if ($rc === 0) {
+        [$ok, $out] = nb_api_or_cli('AddProfile',
+            ['username' => Netbird\apiUsername(), 'profileName' => $name],
+            ['profile', 'add', $name], 15);
+        if ($ok) {
             // Seed an empty credential cfg so the new profile starts blank
             // rather than appearing to inherit another profile's settings.
             Netbird\writeProfileCfg($name, []);
         }
         Netbird\nbUnlock($lock);
+        $msg = $out ?: ($ok ? "Profile '$name' added." : 'profile add returned an error.');
+        // NetBird allows duplicate display names, and the CLI warns right after
+        // an add when the name is already taken — the gateway path must surface
+        // that too, since the plugin keys credential files and later
+        // select/remove requests by display name. $out is '' only on gateway
+        // success; on the CLI fallback its own output already carries the
+        // warning.
+        if ($ok && $out === '') {
+            $dups = count(array_filter(
+                Netbird\listProfiles(),
+                static fn (array $p): bool => $p['name'] === $name
+            ));
+            if ($dups > 1) {
+                $msg .= "\nWarning: " . ($dups - 1)
+                     . " other profile(s) already use this name; operations by name may be ambiguous.";
+            }
+        }
         echo json_encode([
-            'type'    => $rc === 0 ? 'success' : 'error',
-            'title'   => $rc === 0 ? 'Profile added' : 'Add failed',
-            'message' => $out ?: "Profile '$name' added.",
-            'profile' => $rc === 0 ? $name : null,
+            'type'    => $ok ? 'success' : 'error',
+            'title'   => $ok ? 'Profile added' : 'Add failed',
+            'message' => $msg,
+            'profile' => $ok ? $name : null,
         ]);
         break;
 
@@ -220,15 +286,17 @@ switch ($action) {
         }
         $lock = nb_lock_or_busy();
         if ($lock === false) { break; }
-        [$rc, $out] = Netbird\nb(['profile', 'remove', $name]);
-        if ($rc === 0) {
+        [$ok, $out] = nb_api_or_cli('RemoveProfile',
+            ['username' => Netbird\apiUsername(), 'profileName' => $name],
+            ['profile', 'remove', $name], 15);
+        if ($ok) {
             Netbird\deleteProfileCfg($name);
         }
         Netbird\nbUnlock($lock);
         echo json_encode([
-            'type'    => $rc === 0 ? 'success' : 'error',
-            'title'   => $rc === 0 ? 'Profile removed' : 'Remove failed',
-            'message' => $out ?: "Profile '$name' removed.",
+            'type'    => $ok ? 'success' : 'error',
+            'title'   => $ok ? 'Profile removed' : 'Remove failed',
+            'message' => $out ?: ($ok ? "Profile '$name' removed." : 'profile remove returned an error.'),
         ]);
         break;
 
@@ -252,7 +320,13 @@ switch ($action) {
             ]);
             break;
         }
-        [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $name]);
+        // Deliberately CLI, not the gateway's SwitchProfile RPC. `netbird
+        // profile select` does more than the RPC: it records the switch in the
+        // CLI's own per-user active-profile state and runs `down` first when
+        // connected. The follow-up CLI `up` resolves its target profile from
+        // that CLI-side state, so a daemon-only switch would leave `up`
+        // reconnecting the PREVIOUS profile with this profile's credentials.
+        [$rcSel, $outSel] = Netbird\nb(['profile', 'select', $name], 15);
         if ($rcSel !== 0) {
             Netbird\nbUnlock($lock);
             echo json_encode([

@@ -44,13 +44,298 @@ function nb(array $args, int $timeoutSec = 0): array
     return [$rc, implode("\n", $out)];
 }
 
+// ---------------------------------------------------------------------------
+// Daemon HTTP/JSON gateway (NetBird >= 0.75, daemon started with
+// --enable-json-socket by rc.netbird). Exposes the daemon gRPC API as
+// POST /daemon.DaemonService/<Method> with protobuf-JSON bodies over a unix
+// socket — structured data without exec()'ing the CLI. NetBird itself chmods
+// the socket 0666 (relying on peer-credential auth for privileged config
+// changes only); rc.netbird tightens it to root-only 0600 after start.
+// ---------------------------------------------------------------------------
+
+const HTTP_SOCK = '/var/run/netbird-http.sock';
+
+/**
+ * True when the daemon's JSON gateway socket is present and usable.
+ */
+function apiAvailable(): bool
+{
+    return file_exists(HTTP_SOCK) && function_exists('curl_init');
+}
+
+/**
+ * POST to the daemon's JSON gateway.
+ *
+ * Returns:
+ *   ok        — call succeeded (HTTP 200, valid JSON body)
+ *   data      — decoded response on success, null otherwise
+ *   error     — human-readable error text on failure
+ *   reachable — false only when the gateway itself couldn't be reached
+ *               (socket missing / connect failure): callers should fall back
+ *               to the CLI. True for application-level errors, which must be
+ *               surfaced, not silently retried through the CLI.
+ *
+ * @param array<string,mixed> $body
+ * @return array{ok:bool, data:?array, error:string, reachable:bool}
+ */
+function apiCall(string $method, array $body = [], int $timeoutSec = 10): array
+{
+    if (!apiAvailable()) {
+        return ['ok' => false, 'data' => null, 'error' => 'JSON gateway socket not available', 'reachable' => false];
+    }
+    $ch = curl_init('http://localhost/daemon.DaemonService/' . $method);
+    curl_setopt_array($ch, [
+        CURLOPT_UNIX_SOCKET_PATH => HTTP_SOCK,
+        CURLOPT_POST             => true,
+        CURLOPT_POSTFIELDS       => json_encode((object) $body),
+        CURLOPT_HTTPHEADER       => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER   => true,
+        CURLOPT_TIMEOUT          => $timeoutSec,
+    ]);
+    $raw   = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $http  = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+
+    if ($raw === false) {
+        // Only a definite connect-phase failure proves the daemon never saw
+        // the request, making a CLI fallback safe. Anything later — timeout,
+        // send/recv error, empty reply — may have delivered the request, and
+        // the daemon may have executed (or still be executing) it, so report
+        // the gateway reachable to keep nb_api_or_cli() from replaying the
+        // operation through the CLI.
+        return [
+            'ok'        => false,
+            'data'      => null,
+            'error'     => "gateway request failed (curl errno $errno)",
+            'reachable' => $errno !== CURLE_COULDNT_CONNECT,
+        ];
+    }
+    $decoded = json_decode((string) $raw, true);
+    if ($http !== 200) {
+        // grpc-gateway maps gRPC errors to {code, message} plus an HTTP status.
+        $msg = is_array($decoded) && !empty($decoded['message']) ? (string) $decoded['message'] : "HTTP $http";
+        return ['ok' => false, 'data' => null, 'error' => $msg, 'reachable' => true];
+    }
+    if (!is_array($decoded)) {
+        return ['ok' => false, 'data' => null, 'error' => 'gateway returned invalid JSON', 'reachable' => true];
+    }
+    return ['ok' => true, 'data' => $decoded, 'error' => '', 'reachable' => true];
+}
+
+/**
+ * OS username the daemon scopes profile operations to. The web UI runs as
+ * root on Unraid, same as the CLI, so profiles line up between the two.
+ */
+function apiUsername(): string
+{
+    if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+        $pw = @posix_getpwuid(posix_geteuid());
+        if (is_array($pw) && !empty($pw['name'])) {
+            return $pw['name'];
+        }
+    }
+    return 'root';
+}
+
+/**
+ * First present key wins. Shields the gateway mapping from protojson json_name
+ * ambiguity on all-caps proto fields (IP/URL/URI keep their casing today, but
+ * a regenerated gateway could camel-case them).
+ *
+ * @param array<string,mixed> $a
+ * @param string[] $keys
+ */
+function pbGet(array $a, array $keys, mixed $default = null): mixed
+{
+    foreach ($keys as $k) {
+        if (array_key_exists($k, $a)) {
+            return $a[$k];
+        }
+    }
+    return $default;
+}
+
+/**
+ * protobuf-JSON Duration ("0.0125s") → nanoseconds, the unit the CLI's
+ * status --json uses and formatLatency() expects.
+ */
+function pbDurationNs(mixed $dur): int
+{
+    if (is_string($dur) && preg_match('/^([0-9]*\.?[0-9]+)s$/', $dur, $m)) {
+        return (int) round(((float) $m[1]) * 1_000_000_000);
+    }
+    return 0;
+}
+
+/**
+ * protobuf-JSON Timestamp → value relativeTime() treats as unknown when the
+ * daemon reported a zero time (protojson encodes it as the Unix epoch).
+ */
+function pbTimestamp(?string $ts): ?string
+{
+    if (!$ts || str_starts_with($ts, '1970-01-01') || str_starts_with($ts, '0001-01-01')) {
+        return null;
+    }
+    return $ts;
+}
+
+/**
+ * Reshape a gateway StatusResponse into the `netbird status --json` schema the
+ * views were written against, so the CLI remains a drop-in fallback source.
+ *
+ * @param array<string,mixed> $resp
+ * @return array<string,mixed>
+ */
+function mapGatewayStatus(array $resp, string $profileName): array
+{
+    $fs    = is_array($resp['fullStatus']      ?? null) ? $resp['fullStatus']      : [];
+    $local = is_array($fs['localPeerState']    ?? null) ? $fs['localPeerState']    : [];
+    $mgmt  = is_array($fs['managementState']   ?? null) ? $fs['managementState']   : [];
+    $sig   = is_array($fs['signalState']       ?? null) ? $fs['signalState']       : [];
+
+    $peers     = [];
+    $connected = 0;
+    foreach (($fs['peers'] ?? []) as $p) {
+        if (!is_array($p)) {
+            continue;
+        }
+        $state  = (string) ($p['connStatus'] ?? '');
+        $isConn = $state === 'Connected';
+        if ($isConn) {
+            $connected++;
+        }
+        // Mirror the CLI mapper: connection details are only meaningful for a
+        // connected peer — on others the daemon reports stale leftovers, which
+        // the CLI blanks (connectionType "-", empty ICE/relay/handshake/
+        // transfer). Latency and networks are unconditional there too.
+        $peers[] = [
+            'fqdn'             => $p['fqdn'] ?? '',
+            'netbirdIp'        => pbGet($p, ['IP', 'ip'], ''),
+            'netbirdIpv6'      => $p['ipv6'] ?? '',
+            'status'           => $state,
+            'connectionType'   => $isConn ? (!empty($p['relayed']) ? 'Relayed' : 'P2P') : '-',
+            'iceCandidateType' => [
+                'local'  => $isConn ? ($p['localIceCandidateType']  ?? '') : '',
+                'remote' => $isConn ? ($p['remoteIceCandidateType'] ?? '') : '',
+            ],
+            'relayAddress'     => $isConn ? ($p['relayAddress'] ?? '') : '',
+            'latency'          => pbDurationNs($p['latency'] ?? null),
+            'lastWireguardHandshake' => $isConn ? pbTimestamp($p['lastWireguardHandshake'] ?? null) : null,
+            // int64 arrives as a JSON string per the protobuf JSON mapping.
+            'transferReceived' => $isConn ? (int) ($p['bytesRx'] ?? 0) : 0,
+            'transferSent'     => $isConn ? (int) ($p['bytesTx'] ?? 0) : 0,
+            'networks'         => $p['networks'] ?? [],
+        ];
+    }
+
+    $relayDetails = [];
+    $relayAvail   = 0;
+    foreach (($fs['relays'] ?? []) as $r) {
+        if (!is_array($r)) {
+            continue;
+        }
+        if (!empty($r['available'])) {
+            $relayAvail++;
+        }
+        $relayDetails[] = [
+            'uri'       => pbGet($r, ['URI', 'uri'], ''),
+            'available' => !empty($r['available']),
+            'error'     => $r['error'] ?? '',
+        ];
+    }
+
+    $dnsServers = [];
+    foreach (($fs['dnsServers'] ?? $fs['dns_servers'] ?? []) as $g) {
+        if (!is_array($g)) {
+            continue;
+        }
+        $dnsServers[] = [
+            'servers' => $g['servers'] ?? [],
+            'domains' => $g['domains'] ?? [],
+            'enabled' => !empty($g['enabled']),
+            'error'   => $g['error'] ?? '',
+        ];
+    }
+
+    return [
+        'daemonStatus'  => $resp['status'] ?? '',
+        'daemonVersion' => $resp['daemonVersion'] ?? '',
+        'profileName'   => $profileName,
+        'netbirdIp'     => pbGet($local, ['IP', 'ip'], ''),
+        'netbirdIpv6'   => $local['ipv6'] ?? '',
+        'publicKey'     => $local['pubKey'] ?? '',
+        'fqdn'          => $local['fqdn'] ?? '',
+        'usesKernelInterface'         => !empty($local['kernelInterface']),
+        'quantumResistance'           => !empty($local['rosenpassEnabled']),
+        'quantumResistancePermissive' => !empty($local['rosenpassPermissive']),
+        'networks'              => $local['networks'] ?? [],
+        'lazyConnectionEnabled' => !empty($fs['lazyConnectionEnabled']),
+        'forwardingRules'       => (int) pbGet($fs, ['NumberOfForwardingRules', 'numberOfForwardingRules'], 0),
+        'management' => [
+            'url'       => pbGet($mgmt, ['URL', 'url'], ''),
+            'connected' => !empty($mgmt['connected']),
+            'error'     => $mgmt['error'] ?? '',
+        ],
+        'signal' => [
+            'url'       => pbGet($sig, ['URL', 'url'], ''),
+            'connected' => !empty($sig['connected']),
+            'error'     => $sig['error'] ?? '',
+        ],
+        'relays' => [
+            'total'     => count($relayDetails),
+            'available' => $relayAvail,
+            'details'   => $relayDetails,
+        ],
+        'dnsServers' => $dnsServers,
+        'peers' => [
+            'total'     => count($peers),
+            'connected' => $connected,
+            'details'   => $peers,
+        ],
+    ];
+}
+
+/**
+ * Version of the installed netbird binary (`netbird version`, purely local —
+ * no daemon round-trip), or '' if unknown. Cached for the request.
+ */
+function cliVersion(): string
+{
+    static $ver = null;
+    if ($ver === null) {
+        [$rc, $out] = nb(['version'], 3);
+        $ver = $rc === 0 ? trim(explode("\n", $out)[0]) : '';
+    }
+    return $ver;
+}
+
 /**
  * Read JSON status. Returns null if daemon unreachable or output isn't JSON.
+ * Prefers the JSON gateway; falls back to CLI `status --json` (covers daemons
+ * started without --enable-json-socket, e.g. across a plugin upgrade that
+ * hasn't restarted the daemon yet).
  *
  * @return array<string,mixed>|null
  */
 function statusJson(): ?array
 {
+    $res = apiCall('Status', ['getFullPeerStatus' => true], 3);
+    if ($res['ok'] && isset($res['data']['status'])) {
+        $profile = '';
+        $ap = apiCall('GetActiveProfile', [], 3);
+        if ($ap['ok']) {
+            $profile = (string) ($ap['data']['profileName'] ?? '');
+        }
+        $mapped = mapGatewayStatus($res['data'], $profile);
+        // `status --json` reports the invoking binary's version as cliVersion;
+        // the gateway response has no equivalent, so ask the binary directly.
+        // The dashboard compares it against daemonVersion for its
+        // "restart pending" hint after a plugin upgrade.
+        $mapped['cliVersion'] = cliVersion();
+        return $mapped;
+    }
+
     [$rc, $out] = nb(['status', '--json'], 3);
     if ($rc !== 0 || $out === '') {
         return null;
@@ -122,13 +407,40 @@ function readApplyResult(): ?array
 }
 
 /**
- * List NetBird profiles by parsing `netbird profile list` text output.
- * Returns an array of ['name' => string, 'active' => bool].
- * Returns [] when the daemon is unreachable.
+ * List NetBird profiles as ['name' => string, 'active' => bool] entries.
+ * Prefers the JSON gateway's ListProfiles; falls back to parsing the CLI's
+ * text output. Returns [] when the daemon is unreachable.
  *
  * @return array<int, array{name:string, active:bool}>
  */
 function listProfiles(): array
+{
+    $res = apiCall('ListProfiles', ['username' => apiUsername()], 3);
+    if ($res['ok']) {
+        // protojson omits empty repeated fields, so a daemon with zero
+        // profiles answers {} — still a successful response, not a reason
+        // to fall back to the CLI.
+        $list = $res['data']['profiles'] ?? [];
+        $profiles = [];
+        foreach ((is_array($list) ? $list : []) as $p) {
+            if (is_array($p) && isset($p['name'])) {
+                $profiles[] = [
+                    'name'   => (string) $p['name'],
+                    'active' => !empty(pbGet($p, ['isActive', 'is_active'])),
+                ];
+            }
+        }
+        return $profiles;
+    }
+    return listProfilesCli();
+}
+
+/**
+ * CLI fallback for listProfiles(): parse `netbird profile list` text output.
+ *
+ * @return array<int, array{name:string, active:bool}>
+ */
+function listProfilesCli(): array
 {
     [$rc, $out] = nb(['profile', 'list'], 3);
     if ($rc !== 0) {

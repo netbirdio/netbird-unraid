@@ -39,6 +39,16 @@ $editProf = (string) ($_GET['nbprofile'] ?? '');
 if (!Netbird\validProfileName($editProf)) {
     $editProf = '';
 }
+// A stale ?nbprofile= must not survive its profile: after a deletion the URL
+// still carries the old name, and rendering it leaves the form stuck "editing"
+// a profile that no longer exists. Only accept names present in the list;
+// anything else falls through to the active profile below. When the list is
+// empty (daemon down, nothing saved) keep the requested name so a fresh
+// install can still be pointed at a profile to pre-stage.
+if ($editProf !== '' && $profiles
+    && !in_array($editProf, array_column($profiles, 'name'), true)) {
+    $editProf = '';
+}
 if ($editProf === '') {
     $editProf = $activeProf;
     if ($editProf === '' && $profiles) {
