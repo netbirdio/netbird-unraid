@@ -13,6 +13,7 @@ rm -rf /boot/config/plugins/netbird/lib/*
 rm -rf /boot/config/plugins/netbird/profiles
 rm -f  /boot/config/plugins/netbird/netbird.cfg
 
-log "Restarting NetBird"
-nohup /bin/sh -c 'sleep 5 ; /etc/rc.d/rc.netbird restart' >/dev/null 2>&1 </dev/null &
-disown 2>/dev/null || true
+# No restart here: deleting netbird.cfg reverts the install to the packaged
+# default (disabled), so rc.netbird's start would refuse anyway. An erased
+# installation deliberately stays down until it is reconfigured.
+log "NetBird stopped; configuration erased. Enable it again from Settings."

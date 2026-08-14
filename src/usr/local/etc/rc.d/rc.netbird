@@ -75,7 +75,12 @@ start_netbird() {
     mkdir -p /var/lib/netbird /etc/netbird
     # 9>&- drops the serialization lock descriptor before handing off to the
     # daemon. Without it the long-lived daemon inherits the lock and holds it
-    # until it exits, wedging every subsequent start/stop/restart.
+    # until it exits, wedging every subsequent start/stop/restart. The same
+    # close also protects the caller's FD 9: apply.sh invokes us while holding
+    # its apply lock there, and a daemon that inherited that descriptor kept
+    # /var/run/netbird-apply.lock held for its whole lifetime — every later
+    # save/connect then failed with "another operation was in progress" until
+    # something restarted the daemon.
     nohup "$DAEMON" service run \
         --daemon-addr "$DAEMON_ADDR" \
         --log-file "$LOGFILE" \

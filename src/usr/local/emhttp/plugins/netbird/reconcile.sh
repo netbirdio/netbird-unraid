@@ -11,5 +11,8 @@
 # waiting on the socket, and so atd doesn't mail the job's output to root on
 # every boot. rc.netbird still records the cycle in /var/log/netbird-utils.log.
 
+. /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
+
+log "array_started: ensuring NetBird is up"
 nohup /bin/sh -c 'sleep 5 ; /etc/rc.d/rc.netbird start' >/dev/null 2>&1 </dev/null &
 disown 2>/dev/null || true
