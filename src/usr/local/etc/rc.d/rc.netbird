@@ -121,6 +121,12 @@ start_netbird() {
             # descriptor and extend the lock ~2s past our own exit.
             ( sleep 2; chmod 600 "$HTTPSOCKFILE" 2>/dev/null ) >/dev/null 2>&1 </dev/null 9>&- &
         fi
+        # Boot and array start connect from the profile's persisted config, with
+        # no `up` here to hook, so strict Rosenpass would go unverified. Longer
+        # window than a warm reconnect: peers need time to re-establish. 9>&- so
+        # this doesn't inherit the rc lock descriptor.
+        ( /usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh 30 180 ) \
+            >/dev/null 2>&1 </dev/null 9>&- &
         log "NetBird daemon socket is up."
         return 0
     fi

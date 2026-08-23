@@ -24,6 +24,14 @@
 # each other. Result of the run is written to RESULT_FILE for the UI to poll.
 
 . /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
+# Strict-Rosenpass safety net, shared with the watchdog the Connect / profile
+# switch / boot paths fire. Without it we still connect, but unverified.
+if [ -r /usr/local/emhttp/plugins/netbird/include/rosenpass.sh ]; then
+    . /usr/local/emhttp/plugins/netbird/include/rosenpass.sh
+else
+    log "WARN: include/rosenpass.sh missing; strict Rosenpass will not be verified."
+    rosenpass_guard() { RP_GUARD_MSG="connected"; return 0; }
+fi
 
 PROFILE="$1"
 MODE="${2:-ensure}"
@@ -257,65 +265,6 @@ else
     fi
 fi
 
-# Peer handshake census, used to tell a live data plane from a dead one. Prints
-# "<peers> <with-a-completed-handshake>". NetBird zeroes the handshake timestamp
-# (0001-01-01) until a peer actually completes one, while still reporting the
-# peer as "Connected", so this is the only honest liveness signal available.
-nb_handshake_stats() {
-    _hs_out=$("$NB" status --json 2>/dev/null) || return 1
-    [ -n "$_hs_out" ] || return 1
-    # Shape check only: a truncated or plain-text reply must not reach the
-    # counter, where it would read as "no peers".
-    case "$_hs_out" in '{'*'}') ;; *) return 1 ;; esac
-    case "$_hs_out" in *'"peers"'*) ;; *) return 1 ;; esac
-    printf '%s\n' "$_hs_out" \
-        | grep -o '"lastWireguardHandshake":"[^"]*"' \
-        | awk '{t++} $0 !~ /0001-01-01/ {l++} END{printf "%d %d\n", t+0, l+0}'
-}
-
-# Write permissive, then read it back: a failed sed or read-only /boot must not
-# be reported as a durable revert.
-nb_persist_rosenpass_permissive() {
-    if grep -q '^ENABLE_ROSENPASS=' "$GLOBAL_CFG" 2>/dev/null; then
-        sed -i 's/^ENABLE_ROSENPASS=.*/ENABLE_ROSENPASS="permissive"/' "$GLOBAL_CFG" || return 1
-    else
-        # Without a trailing newline the key would glue onto the last line.
-        if [ -s "$GLOBAL_CFG" ] && [ -n "$(tail -c 1 "$GLOBAL_CFG")" ]; then
-            printf '\n' >> "$GLOBAL_CFG" || return 1
-        fi
-        printf 'ENABLE_ROSENPASS="permissive"\n' >> "$GLOBAL_CFG" || return 1
-    fi
-    grep -q '^ENABLE_ROSENPASS="permissive"$' "$GLOBAL_CFG" 2>/dev/null
-}
-
-nb_live_rosenpass_permissive() {
-    "$NB" status 2>/dev/null | grep -qi 'quantum resistance.*permissive'
-}
-
-# Commit-confirm for strict Rosenpass, like a router's "reload in 5": strict
-# refuses peers that don't run it and the setting survives a reboot, so prove the
-# data plane works before leaving it armed. 0 = keep strict (a handshake landed,
-# or no peers for the whole window), 1 = peers but no handshake, 2 = status
-# unreadable. Non-zero reverts; "unknown" must not read as "fine". Zero peers is
-# only believed if it holds all window, since the list is empty just after `up`.
-rosenpass_commit_confirm() {
-    _rp_deadline=$(( $(date +%s) + 30 ))
-    _rp_saw_status=0
-    _rp_saw_peers=0
-    while :; do
-        if _rp_census=$(nb_handshake_stats); then
-            _rp_saw_status=1
-            set -- $_rp_census
-            [ "${1:-0}" -gt 0 ] && _rp_saw_peers=1
-            [ "${2:-0}" -gt 0 ] && return 0
-        fi
-        [ "$(date +%s)" -ge "$_rp_deadline" ] && break
-        sleep 5
-    done
-    [ "$_rp_saw_status" -eq 0 ] && return 2
-    [ "$_rp_saw_peers" -eq 1 ] && return 1
-    return 0
-}
 
 log "Running: netbird up (profile '$PROFILE', mode '$MODE')"
 OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)
@@ -324,45 +273,12 @@ echo "$OUT" >> /var/log/netbird-utils.log
 if [ "$RC" -eq 0 ]; then
     log "netbird up succeeded for profile '$PROFILE'."
     reload_nginx_when_wt0_ready
-    RP_CONFIRM=0
-    if [ "$ENABLE_ROSENPASS" = "1" ]; then
-        rosenpass_commit_confirm
-        RP_CONFIRM=$?
-    fi
-    if [ "$RP_CONFIRM" -eq 0 ]; then
-        write_result true "connected"
-    else
-        if [ "$RP_CONFIRM" -eq 1 ]; then
-            RP_WHY="no peer completed a handshake"
-        else
-            RP_WHY="peer status was unreadable"
-        fi
-        log "Strict Rosenpass: $RP_WHY within 30s; reverting to permissive."
-        # Persist the safer value first so a reboot can't re-arm the lockout.
-        if ! nb_persist_rosenpass_permissive; then
-            log "ERROR: could not write ENABLE_ROSENPASS=permissive to $GLOBAL_CFG; strict stays armed for the next boot."
-            write_result false "strict Rosenpass unverified ($RP_WHY) and the permissive fallback could not be saved"
-        else
-            UP_ARGS=$(printf '%s' "$UP_ARGS" | sed 's/--rosenpass-permissive=false/--rosenpass-permissive=true/')
-            # `down` first: `up` on a live profile is a no-op (see 'reconnect').
-            if ! "$NB" down >/dev/null 2>&1; then
-                log "WARN: netbird down failed before the permissive retry; the following up may be a no-op."
-            fi
-            OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)
-            RC=$?
-            echo "$OUT" >> /var/log/netbird-utils.log
-            if [ "$RC" -ne 0 ]; then
-                log "Permissive Rosenpass reconnect failed (rc=$RC): $OUT"
-                write_result false "strict Rosenpass unverified ($RP_WHY); permissive retry failed (rc=$RC)"
-            elif ! nb_live_rosenpass_permissive; then
-                log "Permissive reconnect returned success but the daemon is not in permissive mode."
-                write_result false "strict Rosenpass unverified ($RP_WHY); permissive is not in effect"
-            else
-                log "Reconnected with permissive Rosenpass."
-                write_result true "strict Rosenpass unverified ($RP_WHY); reverted to permissive"
-            fi
-        fi
-    fi
+    rosenpass_guard "$UP_ARGS"
+    case $? in
+        0) write_result true  "$RP_GUARD_MSG" ;;
+        1) write_result true  "$RP_GUARD_MSG" ;;
+        *) write_result false "$RP_GUARD_MSG" ;;
+    esac
 elif [ "$RC" -eq 124 ]; then
     log "netbird up timed out for profile '$PROFILE' after 90s."
     write_result false "timed out connecting (check management URL / setup key)"

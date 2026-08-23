@@ -150,6 +150,19 @@ function nb_up_args(array $creds): array
     return $args;
 }
 
+/**
+ * Fire the strict-Rosenpass watchdog in the background. `up` from this file
+ * bypasses apply.sh, so without this a Connect or a profile switch could arm a
+ * lockout with nothing verifying it. No-op unless the global setting is strict.
+ */
+function nb_rosenpass_watchdog(): void
+{
+    if ((string) (Netbird\readCfg()['ENABLE_ROSENPASS'] ?? '0') !== '1') {
+        return;
+    }
+    exec('/usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh 0 30 > /dev/null 2>&1 &');
+}
+
 switch ($action) {
     case 'up':
         $lock = nb_lock_or_busy();
@@ -206,6 +219,9 @@ switch ($action) {
         // this call without reimplementing SetConfig+Login here.
         [$rc, $out] = Netbird\nb(nb_up_args($creds), 90);
         Netbird\nbUnlock($lock);
+        if ($rc === 0) {
+            nb_rosenpass_watchdog();
+        }
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
             'title'   => $rc === 0 ? 'Connecting' : 'NetBird up failed',
@@ -348,6 +364,9 @@ switch ($action) {
         // reconnect can't hang the request.
         [$rcUp, $outUp] = Netbird\nb(nb_up_args(Netbird\readProfileCfg($name)), 90);
         Netbird\nbUnlock($lock);
+        if ($rcUp === 0) {
+            nb_rosenpass_watchdog();
+        }
         echo json_encode([
             'type'    => 'success',
             'title'   => 'Profile switched',
