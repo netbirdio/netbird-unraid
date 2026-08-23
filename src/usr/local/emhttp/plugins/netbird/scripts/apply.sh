@@ -257,6 +257,36 @@ else
     fi
 fi
 
+# Peer handshake census, used to tell a live data plane from a dead one. Prints
+# "<peers> <with-a-completed-handshake>". NetBird zeroes the handshake timestamp
+# (0001-01-01) until a peer actually completes one, while still reporting the
+# peer as "Connected", so this is the only honest liveness signal available.
+nb_handshake_stats() {
+    "$NB" status --json 2>/dev/null \
+        | grep -o '"lastWireguardHandshake":"[^"]*"' \
+        | awk '{t++} $0 !~ /0001-01-01/ {l++} END{printf "%d %d\n", t+0, l+0}'
+}
+
+# Commit-confirm for strict Rosenpass, in the spirit of a router's "reload in 5".
+# Strict mode refuses the WireGuard handshake with every peer that doesn't also
+# run Rosenpass, which can strand a headless Unraid host -- and because the
+# setting lives on flash, a reboot re-arms it rather than recovering. So verify
+# the data plane really came back; 0 means it did (or there was nothing to
+# verify), 1 means no peer got through.
+rosenpass_commit_confirm() {
+    _rp_deadline=$(( $(date +%s) + 30 ))
+    while :; do
+        set -- $(nb_handshake_stats)
+        _rp_peers="${1:-0}"
+        _rp_live="${2:-0}"
+        # A single-peer network has nothing to handshake with; don't punish it.
+        [ "$_rp_peers" -eq 0 ] && return 0
+        [ "$_rp_live" -gt 0 ]  && return 0
+        [ "$(date +%s)" -ge "$_rp_deadline" ] && return 1
+        sleep 5
+    done
+}
+
 log "Running: netbird up (profile '$PROFILE', mode '$MODE')"
 OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)
 RC=$?
@@ -264,7 +294,32 @@ echo "$OUT" >> /var/log/netbird-utils.log
 if [ "$RC" -eq 0 ]; then
     log "netbird up succeeded for profile '$PROFILE'."
     reload_nginx_when_wt0_ready
-    write_result true "connected"
+    if [ "$ENABLE_ROSENPASS" = "1" ] && ! rosenpass_commit_confirm; then
+        log "Strict Rosenpass: no peer completed a handshake within 30s; reverting to permissive."
+        # Persist the safer value first, so a reboot can't re-arm the lockout even
+        # if the reconnect below fails. The key may be absent on an upgrade.
+        if grep -q '^ENABLE_ROSENPASS=' "$GLOBAL_CFG" 2>/dev/null; then
+            sed -i 's/^ENABLE_ROSENPASS=.*/ENABLE_ROSENPASS="permissive"/' "$GLOBAL_CFG"
+        else
+            echo 'ENABLE_ROSENPASS="permissive"' >> "$GLOBAL_CFG"
+        fi
+        UP_ARGS=$(printf '%s' "$UP_ARGS" | sed 's/--rosenpass-permissive=false/--rosenpass-permissive=true/')
+        # `down` first: a plain `up` on a live profile is a no-op, so the engine
+        # would never pick the changed flag up (same reason 'reconnect' exists).
+        "$NB" down >/dev/null 2>&1
+        OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)
+        RC=$?
+        echo "$OUT" >> /var/log/netbird-utils.log
+        if [ "$RC" -eq 0 ]; then
+            log "Reconnected with permissive Rosenpass."
+            write_result true "strict Rosenpass reached no peers; reverted to permissive"
+        else
+            log "Permissive Rosenpass reconnect failed (rc=$RC): $OUT"
+            write_result false "strict Rosenpass reached no peers; permissive retry failed (rc=$RC)"
+        fi
+    else
+        write_result true "connected"
+    fi
 elif [ "$RC" -eq 124 ]; then
     log "netbird up timed out for profile '$PROFILE' after 90s."
     write_result false "timed out connecting (check management URL / setup key)"

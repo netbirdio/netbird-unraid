@@ -204,12 +204,12 @@ Runs NetBird's built-in SSH server so other peers can SSH into this Unraid host 
 _(Enable Rosenpass)_:
 : <select name="ENABLE_ROSENPASS">
   <?=mk_option($rosenpass, "0", _("No"))?>
-  <?=mk_option($rosenpass, "1", _("Yes"))?>
-  <?=mk_option($rosenpass, "permissive", _("Yes (permissive)"))?>
+  <?=mk_option($rosenpass, "permissive", _("Yes (permissive, recommended)"))?>
+  <?=mk_option($rosenpass, "1", _("Yes (strict)"))?>
   </select>
 
 <blockquote class="inline_help">
-Enables <a href="https://docs.netbird.io/how-to/enable-post-quantum-cryptography" target="_blank" rel="noopener noreferrer">Rosenpass post-quantum cryptography</a>: NetBird negotiates WireGuard pre-shared keys with a quantum-resistant handshake. <b>Yes</b> only connects to peers that also run Rosenpass. <b>Yes (permissive)</b> uses Rosenpass where the other peer supports it and falls back to a standard WireGuard connection otherwise — use this in a mixed network. Changing this reconnects NetBird to take effect.
+Enables <a href="https://docs.netbird.io/client/post-quantum-cryptography" target="_blank" rel="noopener noreferrer">Rosenpass post-quantum cryptography</a>, which NetBird marks <b>experimental</b>: WireGuard pre-shared keys are negotiated with a quantum-resistant handshake. It is agreed per pair of peers, so <b>both ends need it enabled</b> before a link is actually protected — there is no network-wide switch in the dashboard. <b>Yes (permissive)</b> uses Rosenpass with peers that have it and plain WireGuard with those that don't; it is the right choice for a mixed network and can never cut a peer off. <b>Yes (strict)</b> refuses every peer that does not run Rosenpass: those peers lose this host while NetBird still reports them as "Connected", and the setting survives a reboot, so recovering a headless server needs another peer with Rosenpass or local access to the machine. Changing this reconnects NetBird to take effect.
 </blockquote>
 
 : <input type="button" value="_(Apply)_" onclick="nbSaveSettings()"><input type="button" value="_(Done)_" onclick="done()">
@@ -252,6 +252,10 @@ function nbProfileAdd() {
 function nbViewProfile(name) {
     if (name) { nbReloadTo(name); }
 }
+// Rosenpass mode currently persisted in netbird.cfg, so the strict-mode confirm
+// fires on the transition into it rather than on every Apply.
+var nbRosenpassWas = <?=json_encode((string) $rosenpass)?>;
+
 // Save the global options + the edited profile's credentials, then apply.
 function nbSaveSettings() {
     var profile = $('#nb-edit-profile').val();
@@ -282,6 +286,32 @@ function nbSaveSettings() {
         PRESHARED_KEY:  $('input[name=PRESHARED_KEY]', form).val(),
         csrf_token:     nbCsrfToken
     };
+    // Strict Rosenpass severs every peer that doesn't also run it -- including the
+    // browser applying this change, if it reaches Unraid over NetBird. Confirm
+    // before arming it, but only when it isn't already on, so routine applies of
+    // unrelated settings aren't nagged.
+    if (data.ENABLE_ROSENPASS === '1' && nbRosenpassWas !== '1') {
+        swal({
+            title: 'Require Rosenpass from every peer?',
+            text: 'Peers that do not also run Rosenpass will lose their connection to this host, '
+                + 'while NetBird still reports them as "Connected". The setting survives a reboot, '
+                + 'so recovering needs another peer with Rosenpass enabled, or local access to this '
+                + 'machine. Choose "Yes (permissive)" for post-quantum protection without cutting '
+                + 'anyone off.',
+            type: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Enable strict',
+            cancelButtonText: 'Cancel'
+        }, function(confirmed){
+            if (confirmed) { nbPostSettings(profile, data); }
+        });
+        return;
+    }
+    nbPostSettings(profile, data);
+}
+
+// POST the settings payload, then report the result or poll apply.sh for it.
+function nbPostSettings(profile, data) {
     $.post('/plugins/netbird/include/action.php', data, function(resp){
         if (resp && resp.pending) {
             // apply.sh runs in the background; poll for its result so we can
