@@ -125,8 +125,12 @@ start_netbird() {
         # no `up` here to hook, so strict Rosenpass would go unverified. Longer
         # window than a warm reconnect: peers need time to re-establish. 9>&- so
         # this doesn't inherit the rc lock descriptor.
-        ( /usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh 30 180 ) \
-            >/dev/null 2>&1 </dev/null 9>&- &
+        if [ -x /usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh ]; then
+            ( /usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh 30 180 ) \
+                >/dev/null 2>&1 </dev/null 9>&- &
+        else
+            log "WARN: rosenpass watchdog missing; a strict Rosenpass profile will come up unverified."
+        fi
         log "NetBird daemon socket is up."
         return 0
     fi

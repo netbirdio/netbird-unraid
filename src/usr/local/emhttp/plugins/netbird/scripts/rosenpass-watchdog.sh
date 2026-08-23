@@ -8,6 +8,11 @@
 # Boot needs a longer window than a warm reconnect, since peers must reach
 # management and re-establish before any handshake can land.
 
+# Invoked both from php-fpm and from rc.netbird at boot, so don't assume either
+# hands us a usable PATH -- rc.netbird hardcodes /usr/bin/flock for this reason.
+PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
+export PATH
+
 DELAY="${1:-0}"
 RP_CONFIRM_WINDOW="${2:-30}"
 export RP_CONFIRM_WINDOW
@@ -18,8 +23,6 @@ GLOBAL_CFG=/boot/config/plugins/netbird/netbird.cfg
 LOCK_FILE=/var/run/netbird-apply.lock
 
 . /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
-[ -r /usr/local/emhttp/plugins/netbird/include/rosenpass.sh ] || exit 0
-. /usr/local/emhttp/plugins/netbird/include/rosenpass.sh
 
 [ "$DELAY" -gt 0 ] 2>/dev/null && sleep "$DELAY"
 
@@ -29,6 +32,14 @@ LOCK_FILE=/var/run/netbird-apply.lock
 # Nothing to guard unless the daemon is meant to be up and strict is armed.
 [ "${ENABLE_NETBIRD:-0}" = "1" ]   || exit 0
 [ "${ENABLE_ROSENPASS:-0}" = "1" ] || exit 0
+
+# Strict is armed and we were asked to verify it. Without the shared logic we
+# cannot, so say so loudly instead of exiting as if all were well.
+if [ ! -r /usr/local/emhttp/plugins/netbird/include/rosenpass.sh ]; then
+    log "ERROR: strict Rosenpass is armed but include/rosenpass.sh is missing; connectivity is unverified."
+    exit 1
+fi
+. /usr/local/emhttp/plugins/netbird/include/rosenpass.sh
 
 # Serialize against apply.sh: if an apply holds the lock it runs this same check
 # itself, so there is nothing for us to do.
