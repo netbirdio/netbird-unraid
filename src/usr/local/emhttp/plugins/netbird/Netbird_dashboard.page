@@ -36,18 +36,22 @@ try {
         "<tr><td><span class='w26'>{$label}</span>{$value}</td></tr>" . PHP_EOL;
 
     if (!$enabled) {
-        $state = "<span style='color:#888;'>Disabled</span>";
+        [$stateText, $stateColor] = ['Disabled', '#888'];
     } elseif ($running && $mgmtOk) {
-        $state = "<span style='color:#2eaa2e;'>Connected</span>";
+        [$stateText, $stateColor] = ['Connected', '#2eaa2e'];
     } elseif ($awaitingSetup) {
-        $state = "<span style='color:#d39e00;'>Awaiting configuration</span>";
+        [$stateText, $stateColor] = ['Awaiting configuration', '#d39e00'];
     } elseif ($running) {
-        $state = "<span style='color:#d39e00;'>Daemon running, not connected</span>";
+        [$stateText, $stateColor] = ['Daemon running, not connected', '#d39e00'];
     } else {
-        $state = "<span style='color:#c8331f;'>Stopped</span>";
+        [$stateText, $stateColor] = ['Stopped', '#c8331f'];
     }
 
+    $state = "<span style='color:{$stateColor};'>" . htmlspecialchars($stateText) . '</span>';
+
     $rows = $row('Status', $state);
+
+    $connPeers = $peers = 0;
 
     if ($status) {
         if ($mgmtOk) {
@@ -112,6 +116,33 @@ try {
         }
     }
 
+    // The collapse control hides every row except the header, so a summary is
+    // mirrored into the header itself.
+    $sub = '';
+    if ($mgmtOk) {
+        $line1 = "<span style='color:{$stateColor};'>" . htmlspecialchars($stateText) . '</span>';
+        if ($peers) {
+            $line1 .= "<span style='color:#888;'> · {$connPeers}/{$peers} peers</span>";
+        }
+
+        $addrs = [];
+        foreach ([$ip4, $ip6] as $ip) {
+            if ($ip !== '') {
+                $addrs[] = "<code style='color:#7fa8c9;'>" . htmlspecialchars($ip) . '</code>';
+            }
+        }
+        $line2 = $addrs
+            ? "<span style='color:#888;'>" . implode(' · ', $addrs) . '</span>'
+            : '';
+
+        $sub = $line1 . ($line2 !== '' ? "<br>{$line2}" : '');
+    } else {
+        $sub = "<span style='color:{$stateColor};'>" . htmlspecialchars($stateText) . '</span>';
+    }
+
+    $headerState = "<span class='tile-header-sub' id='netbird-dashboard-sub' "
+        . "style='display:block;line-height:1.4;font-size:1.1rem;'>{$sub}</span>";
+
     $mytiles['netbird']['column2'] = <<<EOT
         <tbody title="NetBird">
         <tr>
@@ -121,6 +152,7 @@ try {
                         <img style="margin-right: 8px; width: 32px; height: 32px" src="/plugins/netbird/netbird.png" alt="NetBird">
                         <div class='section'>
                             <h3 class='tile-header-main' id='netbird-dashboard-title'>NetBird</h3>
+                            {$headerState}
                         </div>
                     </div>
                     <div class='tile-header-right'>
@@ -135,8 +167,23 @@ try {
         </tbody>
         EOT;
 
-    // Pre-7.2 WebGUIs lay out the tile header differently; move the title and
-    // settings cog into place the way the responsive (7.2+) theme does natively.
+    echo <<<EOT
+        <script>
+            $(function() {
+                var sub  = $('#netbird-dashboard-sub');
+                var rows = $('#netbird-dashboard-card').closest('tbody').find('tr').not(':first');
+                if (!sub.length || !rows.length) { return; }
+                var first = rows.first();
+                var sync = function() { sub.toggle(!first.is(':visible')); };
+                sync();
+                new MutationObserver(sync).observe(first[0], {
+                    attributes: true,
+                    attributeFilter: ['style', 'class']
+                });
+            });
+        </script>
+        EOT;
+
     $isResponsiveWebgui = version_compare(parse_ini_file('/etc/unraid-version')['version'] ?? '', '7.2', '>=');
     if (!$isResponsiveWebgui) {
         echo <<<EOT
