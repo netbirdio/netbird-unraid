@@ -121,9 +121,7 @@ try {
     $sub = '';
     if ($mgmtOk) {
         $line1 = "<span style='color:{$stateColor};'>" . htmlspecialchars($stateText) . '</span>';
-        if ($peers) {
-            $line1 .= "<span style='color:#888;'> · {$connPeers}/{$peers} peers</span>";
-        }
+        $line1 .= "<span style='color:#888;'> · {$connPeers}/{$peers} peers</span>";
 
         $addrs = [];
         foreach ([$ip4, $ip6] as $ip) {
