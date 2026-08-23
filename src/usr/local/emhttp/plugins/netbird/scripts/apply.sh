@@ -198,6 +198,15 @@ UP_ARGS="up"
 # NetBird's built-in SSH server (host-wide global toggle from netbird.cfg).
 # Unraid is root-operated, so also permit root login (refused otherwise).
 [ "$ENABLE_SSH" = "1" ]  && UP_ARGS="$UP_ARGS --allow-server-ssh --enable-ssh-root"
+# Rosenpass post-quantum key exchange (host-wide global toggle from netbird.cfg).
+# "1" = on, "permissive" = on but still accept non-Rosenpass peers, else off.
+# Explicit booleans either way so toggling off actually disables it — NetBird
+# remembers the last flag value on the profile otherwise (same as --disable-dns).
+case "$ENABLE_ROSENPASS" in
+    1)          UP_ARGS="$UP_ARGS --enable-rosenpass=true --rosenpass-permissive=false" ;;
+    permissive) UP_ARGS="$UP_ARGS --enable-rosenpass=true --rosenpass-permissive=true" ;;
+    *)          UP_ARGS="$UP_ARGS --enable-rosenpass=false --rosenpass-permissive=false" ;;
+esac
 
 # Guard against a stale NetBird-managed /etc/resolv.conf surviving an ungraceful
 # shutdown (reboot, SIGKILL, array stop). If it points only at NetBird's own

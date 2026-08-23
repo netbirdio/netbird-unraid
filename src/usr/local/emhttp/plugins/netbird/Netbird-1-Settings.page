@@ -15,6 +15,7 @@ $cfg    = function_exists('parse_plugin_cfg') ? parse_plugin_cfg($plugin) : [];
 // Global daemon options live in netbird.cfg.
 $enabled       = $cfg['ENABLE_NETBIRD']   ?? '0';
 $enableSsh     = $cfg['ENABLE_SSH']       ?? '0';
+$rosenpass     = $cfg['ENABLE_ROSENPASS'] ?? '0';
 $manageDns     = $cfg['MANAGE_DNS']       ?? '1';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
 
@@ -200,6 +201,17 @@ _(Enable NetBird SSH)_:
 Runs NetBird's built-in SSH server so other peers can SSH into this Unraid host as <code>root</code> using NetBird identity (no separate SSH keys to manage). <b>Security:</b> this grants root SSH to any peer your NetBird access controls permit, so leave it disabled unless you need it. You must also enable SSH for this peer and create an access control policy in the NetBird dashboard — see <a href="https://docs.netbird.io/manage/peers/ssh#step-2-create-access-control-policy" target="_blank" rel="noopener noreferrer">the NetBird SSH guide</a>. Changing this reconnects NetBird to take effect.
 </blockquote>
 
+_(Enable Rosenpass)_:
+: <select name="ENABLE_ROSENPASS">
+  <?=mk_option($rosenpass, "0", _("No"))?>
+  <?=mk_option($rosenpass, "1", _("Yes"))?>
+  <?=mk_option($rosenpass, "permissive", _("Yes (permissive)"))?>
+  </select>
+
+<blockquote class="inline_help">
+Enables <a href="https://docs.netbird.io/how-to/enable-post-quantum-cryptography" target="_blank" rel="noopener noreferrer">Rosenpass post-quantum cryptography</a>: NetBird negotiates WireGuard pre-shared keys with a quantum-resistant handshake. <b>Yes</b> only connects to peers that also run Rosenpass. <b>Yes (permissive)</b> uses Rosenpass where the other peer supports it and falls back to a standard WireGuard connection otherwise — use this in a mixed network. Changing this reconnects NetBird to take effect.
+</blockquote>
+
 : <input type="button" value="_(Apply)_" onclick="nbSaveSettings()"><input type="button" value="_(Done)_" onclick="done()">
 </form>
 
@@ -261,6 +273,7 @@ function nbSaveSettings() {
         name:           profile,
         ENABLE_NETBIRD: enableNetBird,
         ENABLE_SSH:     $('select[name=ENABLE_SSH]', form).val(),
+        ENABLE_ROSENPASS: $('select[name=ENABLE_ROSENPASS]', form).val(),
         MANAGE_DNS:     $('select[name=MANAGE_DNS]', form).val(),
         LOG_LEVEL:      $('select[name=LOG_LEVEL]', form).val(),
         MANAGEMENT_URL: $('input[name=MANAGEMENT_URL]', form).val(),

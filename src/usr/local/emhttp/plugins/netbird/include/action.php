@@ -140,6 +140,13 @@ function nb_up_args(array $creds): array
     // it — NetBird remembers the last flag value on the profile otherwise.
     $manageDns = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
     $args[] = '--disable-dns=' . ($manageDns ? 'false' : 'true');
+    // Rosenpass post-quantum key exchange is host-wide, like SSH/DNS.
+    // "1" = on, "permissive" = on but still accept non-Rosenpass peers, else
+    // off. Pass explicit booleans either way so toggling off actually disables
+    // it — NetBird remembers the last flag value on the profile otherwise.
+    $rosenpass = (string) (Netbird\readCfg()['ENABLE_ROSENPASS'] ?? '0');
+    $args[] = '--enable-rosenpass='     . (in_array($rosenpass, ['1', 'permissive'], true) ? 'true' : 'false');
+    $args[] = '--rosenpass-permissive=' . ($rosenpass === 'permissive' ? 'true' : 'false');
     return $args;
 }
 
@@ -371,7 +378,14 @@ switch ($action) {
         // requires a reconnect to take effect (see the mode selection below).
         $dnsWas = (Netbird\readCfg()['MANAGE_DNS'] ?? '1') === '1';
         $dns    = (($_POST['MANAGE_DNS'] ?? '1') === '0') ? '0' : '1';
-        $globalCfg = ['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns];
+        // Rosenpass is a global (host-wide) toggle like SSH/DNS; a change
+        // requires a reconnect to take effect (see the mode selection below).
+        $rpWas = (string) (Netbird\readCfg()['ENABLE_ROSENPASS'] ?? '0');
+        $rp    = (string) ($_POST['ENABLE_ROSENPASS'] ?? '0');
+        if (!in_array($rp, ['0', '1', 'permissive'], true)) {
+            $rp = '0';
+        }
+        $globalCfg = ['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns, 'ENABLE_ROSENPASS' => $rp];
         $mode      = 'ensure';
 
         // Disabling is deliberately independent of profile state. A fresh
@@ -407,7 +421,8 @@ switch ($action) {
             $pskChanged  = trim($creds['PRESHARED_KEY']) !== '' && trim($old['PRESHARED_KEY']) !== trim($creds['PRESHARED_KEY']);
             $sshChanged  = $sshWas !== ($ssh === '1');
             $dnsChanged  = $dnsWas !== ($dns === '1');
-            $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged || $dnsChanged) ? 'reconnect' : 'ensure');
+            $rpChanged   = $rpWas !== $rp;
+            $mode = ($mgmtChanged || $hostChanged) ? 'reregister' : (($pskChanged || $sshChanged || $dnsChanged || $rpChanged) ? 'reconnect' : 'ensure');
 
             // An empty Setup Key field means "keep the stored key" — the key is
             // only consumed at registration, so a profile never loses it once
