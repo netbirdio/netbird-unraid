@@ -159,9 +159,9 @@ function nb_up_args(array $creds): array
 const NB_ROSENPASS_WATCHDOG = '/usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh';
 
 /**
- * Fire the strict-Rosenpass watchdog in the background. `up` from this file
- * bypasses apply.sh, so without this a Connect or a profile switch could arm a
- * lockout with nothing verifying it. No-op unless the global setting is strict.
+ * Whether the strict-Rosenpass safety net is installed and usable. Both halves
+ * are needed: the watchdog script to run the check, and the shared guard it
+ * sources to perform it.
  */
 function nb_rosenpass_guard_available(): bool
 {
@@ -169,6 +169,11 @@ function nb_rosenpass_guard_available(): bool
         && is_readable('/usr/local/emhttp/plugins/netbird/include/rosenpass.sh');
 }
 
+/**
+ * Fire the strict-Rosenpass watchdog in the background. `up` from this file
+ * bypasses apply.sh, so without this a Connect or a profile switch could arm a
+ * lockout with nothing verifying it. No-op unless the global setting is strict.
+ */
 function nb_rosenpass_watchdog(): void
 {
     if ((string) (Netbird\readCfg()['ENABLE_ROSENPASS'] ?? '0') !== '1') {

@@ -281,7 +281,6 @@ else
     fi
 fi
 
-
 log "Running: netbird up (profile '$PROFILE', mode '$MODE')"
 OUT=$(timeout 90 "$NB" $UP_ARGS 2>&1)
 RC=$?
