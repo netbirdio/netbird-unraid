@@ -24,6 +24,25 @@
 # each other. Result of the run is written to RESULT_FILE for the UI to poll.
 
 . /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
+# Strict-Rosenpass safety net, shared with the watchdog the Connect / profile
+# switch / boot paths fire. If it's missing we refuse to arm strict at all (see
+# the ENABLE_ROSENPASS case below) rather than connect in the one mode that can
+# strand this host with nothing able to undo it.
+RP_GUARD_OK=0
+if [ -r /usr/local/emhttp/plugins/netbird/include/rosenpass.sh ]; then
+    . /usr/local/emhttp/plugins/netbird/include/rosenpass.sh
+    RP_GUARD_OK=1
+else
+    log "WARN: include/rosenpass.sh missing; strict Rosenpass will be downgraded to permissive."
+    rosenpass_guard() {
+        if [ "${ENABLE_ROSENPASS:-0}" = "1" ]; then
+            RP_GUARD_MSG="connected permissively; strict not armed because verification is unavailable"
+        else
+            RP_GUARD_MSG="connected"
+        fi
+        return 0
+    }
+fi
 
 PROFILE="$1"
 MODE="${2:-ensure}"
@@ -203,7 +222,12 @@ UP_ARGS="up"
 # Explicit booleans either way so toggling off actually disables it — NetBird
 # remembers the last flag value on the profile otherwise (same as --disable-dns).
 case "$ENABLE_ROSENPASS" in
-    1)          UP_ARGS="$UP_ARGS --enable-rosenpass=true --rosenpass-permissive=false" ;;
+    1)          if [ "$RP_GUARD_OK" = "1" ]; then
+                    UP_ARGS="$UP_ARGS --enable-rosenpass=true --rosenpass-permissive=false"
+                else
+                    # No guard to recover a lockout, so don't create one.
+                    UP_ARGS="$UP_ARGS --enable-rosenpass=true --rosenpass-permissive=true"
+                fi ;;
     permissive) UP_ARGS="$UP_ARGS --enable-rosenpass=true --rosenpass-permissive=true" ;;
     *)          UP_ARGS="$UP_ARGS --enable-rosenpass=false --rosenpass-permissive=false" ;;
 esac
@@ -264,7 +288,12 @@ echo "$OUT" >> /var/log/netbird-utils.log
 if [ "$RC" -eq 0 ]; then
     log "netbird up succeeded for profile '$PROFILE'."
     reload_nginx_when_wt0_ready
-    write_result true "connected"
+    rosenpass_guard "$UP_ARGS"
+    case $? in
+        0) write_result true  "$RP_GUARD_MSG" ;;
+        1) write_result true  "$RP_GUARD_MSG" ;;
+        *) write_result false "$RP_GUARD_MSG" ;;
+    esac
 elif [ "$RC" -eq 124 ]; then
     log "netbird up timed out for profile '$PROFILE' after 90s."
     write_result false "timed out connecting (check management URL / setup key)"

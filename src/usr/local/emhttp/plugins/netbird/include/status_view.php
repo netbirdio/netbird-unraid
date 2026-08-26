@@ -13,6 +13,28 @@ $status    = $daemonReady ? Netbird\statusJson() : null;
 // Whether the plugin lets NetBird manage host DNS (MANAGE_DNS, default on).
 $manageDns = ($cfg['MANAGE_DNS'] ?? '1') === '1';
 
+// Rosenpass health. The exchange is negotiated pairwise, so a peer running it in
+// strict mode refuses the WireGuard handshake with peers that don't -- while
+// NetBird still reports those peers as "Connected". That leaves a live-looking
+// tunnel carrying nothing, which is invisible unless we say so, and it can
+// strand a headless host (the setting persists on flash across reboots). Flag
+// the signature: Rosenpass strict, peers connected, not one handshake completed.
+$rpEnabled    = !empty($status['quantumResistance']);
+$rpPermissive = !empty($status['quantumResistancePermissive']);
+$rpConnected  = 0;
+$rpHandshaken = 0;
+foreach (($status['peers']['details'] ?? []) as $rpPeer) {
+    if (($rpPeer['status'] ?? '') !== 'Connected') {
+        continue;
+    }
+    $rpConnected++;
+    $rpHs = (string) ($rpPeer['lastWireguardHandshake'] ?? '');
+    if ($rpHs !== '' && !str_starts_with($rpHs, '0001-01-01')) {
+        $rpHandshaken++;
+    }
+}
+$rpStalled = $rpEnabled && !$rpPermissive && $rpConnected > 0 && $rpHandshaken === 0;
+
 // The host's live resolver, so issue #2 ("NetBird took over my DNS") is visible
 // at a glance: when management is on, NetBird rewrites this to point at its own
 // embedded resolver. Parse the nameserver lines out of /etc/resolv.conf.
@@ -137,9 +159,22 @@ if ($daemonReady && !$status) {
             </div>
             <div>WireGuard interface</div>
             <div><?=!empty($status['usesKernelInterface']) ? 'Kernel module' : 'Userspace (wireguard-go)'?></div>
-            <?php if (!empty($status['quantumResistance'])): ?>
+            <?php if ($rpEnabled): ?>
                 <div>Rosenpass</div>
-                <div>Enabled<?=!empty($status['quantumResistancePermissive']) ? ' (permissive)' : ''?></div>
+                <div>
+                    <span class="<?=$rpStalled ? 'nb-bad' : 'nb-ok'?>">
+                        Enabled<?=$rpPermissive ? ' (permissive)' : ' (strict)'?>
+                    </span>
+                    <?php if ($rpStalled): ?>
+                        <div class="nb-bad" style="font-size:0.9em;">
+                            <?=$rpConnected?> peer<?=$rpConnected === 1 ? '' : 's'?> report as connected but
+                            none has completed a WireGuard handshake, so this host is carrying no peer
+                            traffic. Strict Rosenpass refuses peers that don't run it, and NetBird still
+                            shows them as "Connected". Set Rosenpass to <b>Yes (permissive)</b> or
+                            <b>No</b> on the Settings tab, or enable Rosenpass on the other peers.
+                        </div>
+                    <?php endif; ?>
+                </div>
             <?php endif; ?>
             <?php if (isset($status['lazyConnectionEnabled']) && $status['lazyConnectionEnabled']): ?>
                 <div>Lazy connections</div><div>Enabled</div>

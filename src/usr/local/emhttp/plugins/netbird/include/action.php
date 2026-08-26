@@ -145,9 +145,41 @@ function nb_up_args(array $creds): array
     // off. Pass explicit booleans either way so toggling off actually disables
     // it — NetBird remembers the last flag value on the profile otherwise.
     $rosenpass = (string) (Netbird\readCfg()['ENABLE_ROSENPASS'] ?? '0');
+    // Strict is the one mode that can strand this host, and the watchdog is what
+    // undoes that. If it isn't there to run, connect permissively instead: same
+    // post-quantum protection where the other peer supports it, no lockout.
+    if ($rosenpass === '1' && !nb_rosenpass_guard_available()) {
+        $rosenpass = 'permissive';
+    }
     $args[] = '--enable-rosenpass='     . (in_array($rosenpass, ['1', 'permissive'], true) ? 'true' : 'false');
     $args[] = '--rosenpass-permissive=' . ($rosenpass === 'permissive' ? 'true' : 'false');
     return $args;
+}
+
+const NB_ROSENPASS_WATCHDOG = '/usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh';
+
+/**
+ * Whether the strict-Rosenpass safety net is installed and usable. Both halves
+ * are needed: the watchdog script to run the check, and the shared guard it
+ * sources to perform it.
+ */
+function nb_rosenpass_guard_available(): bool
+{
+    return is_executable(NB_ROSENPASS_WATCHDOG)
+        && is_readable('/usr/local/emhttp/plugins/netbird/include/rosenpass.sh');
+}
+
+/**
+ * Fire the strict-Rosenpass watchdog in the background. `up` from this file
+ * bypasses apply.sh, so without this a Connect or a profile switch could arm a
+ * lockout with nothing verifying it. No-op unless the global setting is strict.
+ */
+function nb_rosenpass_watchdog(): void
+{
+    if ((string) (Netbird\readCfg()['ENABLE_ROSENPASS'] ?? '0') !== '1') {
+        return;
+    }
+    exec(NB_ROSENPASS_WATCHDOG . ' 0 30 > /dev/null 2>&1 &');
 }
 
 switch ($action) {
@@ -206,6 +238,9 @@ switch ($action) {
         // this call without reimplementing SetConfig+Login here.
         [$rc, $out] = Netbird\nb(nb_up_args($creds), 90);
         Netbird\nbUnlock($lock);
+        if ($rc === 0) {
+            nb_rosenpass_watchdog();
+        }
         echo json_encode([
             'type'    => $rc === 0 ? 'success' : 'error',
             'title'   => $rc === 0 ? 'Connecting' : 'NetBird up failed',
@@ -348,6 +383,9 @@ switch ($action) {
         // reconnect can't hang the request.
         [$rcUp, $outUp] = Netbird\nb(nb_up_args(Netbird\readProfileCfg($name)), 90);
         Netbird\nbUnlock($lock);
+        if ($rcUp === 0) {
+            nb_rosenpass_watchdog();
+        }
         echo json_encode([
             'type'    => 'success',
             'title'   => 'Profile switched',
