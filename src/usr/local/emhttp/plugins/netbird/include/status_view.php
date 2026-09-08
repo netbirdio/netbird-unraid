@@ -18,7 +18,7 @@ $manageDns = ($cfg['MANAGE_DNS'] ?? '1') === '1';
 // NetBird still reports those peers as "Connected". That leaves a live-looking
 // tunnel carrying nothing, which is invisible unless we say so, and it can
 // strand a headless host (the setting persists on flash across reboots). Flag
-// the signature: Rosenpass strict, peers connected, not one handshake completed.
+// the signature: Rosenpass strict, peers connected, no recent Rosenpass handshake.
 $rpEnabled    = !empty($status['quantumResistance']);
 $rpPermissive = !empty($status['quantumResistancePermissive']);
 $rpConnected  = 0;
@@ -28,8 +28,7 @@ foreach (($status['peers']['details'] ?? []) as $rpPeer) {
         continue;
     }
     $rpConnected++;
-    $rpHs = (string) ($rpPeer['lastWireguardHandshake'] ?? '');
-    if ($rpHs !== '' && !str_starts_with($rpHs, '0001-01-01')) {
+    if (Netbird\hasRosenpassHandshake($rpPeer)) {
         $rpHandshaken++;
     }
 }

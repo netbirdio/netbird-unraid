@@ -6,20 +6,11 @@
 # instead of only the Settings save path. Callers need $NB, $GLOBAL_CFG,
 # $ENABLE_ROSENPASS and a log() function.
 
-# Peer handshake census, used to tell a live data plane from a dead one. Prints
-# "<peers> <with-a-completed-handshake>". NetBird zeroes the handshake timestamp
-# (0001-01-01) until a peer actually completes one, while still reporting the
-# peer as "Connected", so this is the only honest liveness signal available.
+# CLI timestamps use the host timezone, even for Go's zero time. Parse JSON
+# and dates instead of matching the UTC sentinel's literal date prefix.
 nb_handshake_stats() {
-    _hs_out=$("$NB" status --json 2>/dev/null) || return 1
-    [ -n "$_hs_out" ] || return 1
-    # Shape check only: a truncated or plain-text reply must not reach the
-    # counter, where it would read as "no peers".
-    case "$_hs_out" in '{'*'}') ;; *) return 1 ;; esac
-    case "$_hs_out" in *'"peers"'*) ;; *) return 1 ;; esac
-    printf '%s\n' "$_hs_out" \
-        | grep -o '"lastWireguardHandshake":"[^"]*"' \
-        | awk '{t++} $0 !~ /0001-01-01/ {l++} END{printf "%d %d\n", t+0, l+0}'
+    _hs_out=$(timeout -k 1 "${1:-3}" "$NB" status --json 2>/dev/null) || return 1
+    printf '%s\n' "$_hs_out" | php /usr/local/emhttp/plugins/netbird/include/handshake.php 2>/dev/null
 }
 
 # Write permissive, then read it back: a failed sed or read-only /boot must not
@@ -38,7 +29,8 @@ nb_persist_rosenpass_permissive() {
 }
 
 nb_live_rosenpass_permissive() {
-    "$NB" status 2>/dev/null | grep -qi 'quantum resistance.*permissive'
+    _hs_out=$(timeout -k 1 3 "$NB" status --json 2>/dev/null) || return 1
+    printf '%s\n' "$_hs_out" | php /usr/local/emhttp/plugins/netbird/include/handshake.php permissive 2>/dev/null
 }
 
 # Commit-confirm for strict Rosenpass, like a router's "reload in 5": strict
@@ -51,17 +43,27 @@ rosenpass_commit_confirm() {
     _rp_deadline=$(( $(date +%s) + ${RP_CONFIRM_WINDOW:-30} ))
     _rp_saw_status=0
     _rp_saw_peers=0
+    _rp_unreadable=0
     while :; do
-        if _rp_census=$(nb_handshake_stats); then
+        _rp_remaining=$(( _rp_deadline - $(date +%s) ))
+        _rp_probe=$_rp_remaining
+        [ "$_rp_probe" -gt 0 ] || _rp_probe=1
+        [ "$_rp_probe" -le 3 ] || _rp_probe=3
+        if _rp_census=$(nb_handshake_stats "$_rp_probe"); then
             _rp_saw_status=1
             set -- $_rp_census
             [ "${1:-0}" -gt 0 ] && _rp_saw_peers=1
             [ "${2:-0}" -gt 0 ] && return 0
+        else
+            _rp_unreadable=1
         fi
-        [ "$(date +%s)" -ge "$_rp_deadline" ] && break
-        sleep 5
+        _rp_remaining=$(( _rp_deadline - $(date +%s) ))
+        [ "$_rp_remaining" -gt 0 ] || break
+        [ "$_rp_remaining" -le 5 ] || _rp_remaining=5
+        sleep "$_rp_remaining"
     done
     [ "$_rp_saw_status" -eq 0 ] && return 2
+    [ "$_rp_unreadable" -eq 1 ] && return 2
     [ "$_rp_saw_peers" -eq 1 ] && return 1
     return 0
 }
@@ -79,7 +81,7 @@ rosenpass_guard() {
     _rp_rc=$?
     [ "$_rp_rc" -eq 0 ] && return 0
     if [ "$_rp_rc" -eq 1 ]; then
-        _rp_why="no peer completed a handshake"
+        _rp_why="no Rosenpass peer has a recent handshake"
     else
         _rp_why="peer status was unreadable"
     fi
@@ -95,10 +97,10 @@ rosenpass_guard() {
     _rp_args="${1:-up --enable-rosenpass=true --rosenpass-permissive=true}"
     _rp_args=$(printf '%s' "$_rp_args" | sed 's/--rosenpass-permissive=false/--rosenpass-permissive=true/')
     # `down` first: `up` on a live profile is a no-op (see 'reconnect').
-    if ! "$NB" down >/dev/null 2>&1; then
+    if ! timeout -k 1 30 "$NB" down >/dev/null 2>&1; then
         log "WARN: netbird down failed before the permissive retry; the following up may be a no-op."
     fi
-    _rp_out=$(timeout 90 "$NB" $_rp_args 2>&1)
+    _rp_out=$(timeout -k 1 90 "$NB" $_rp_args 2>&1)
     _rp_up=$?
     if [ "$_rp_up" -ne 0 ]; then
         log "Permissive Rosenpass reconnect failed (rc=$_rp_up): $_rp_out"
