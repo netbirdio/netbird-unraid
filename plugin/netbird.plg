@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.08.26.0559">
+<!ENTITY version     "2026.09.08.1745">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "6a2432c0af15094c77657c05a976a1ce04b40fab3510e2051960e690f9059b37">
+<!ENTITY pkgSHA256     "c24b3aa5034dbb03bbd977e01d8d51c975947b260d26315ab9fac4cc2747a84b">
 ]>
 
 <PLUGIN
@@ -36,6 +36,16 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.09.08.1745
+
+**Bug Fixes**
+
+- fix: validate Rosenpass handshakes before keeping strict mode (#49)
+
+**Maintenance**
+
+- chore: update NetBird to 0.78.1 (#48)
 
 ### 2026.08.26.0559
 
@@ -123,12 +133,6 @@
 **Maintenance**
 
 - chore: update NetBird to 0.74.5 (#28)
-
-### 2026.07.14.1016
-
-**Maintenance**
-
-- chore: update NetBird to 0.74.4 (#26)
 
 Older releases: https://github.com/netbirdio/netbird-unraid/releases
 
