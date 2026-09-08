@@ -5,6 +5,8 @@
 
 namespace Netbird;
 
+require_once __DIR__ . '/handshake.php';
+
 const PLUGIN          = 'netbird';
 const NETBIRD_BIN     = '/usr/local/sbin/netbird';
 const RC_SCRIPT       = '/etc/rc.d/rc.netbird';
@@ -174,10 +176,7 @@ function pbDurationNs(mixed $dur): int
  */
 function pbTimestamp(?string $ts): ?string
 {
-    if (!$ts || str_starts_with($ts, '1970-01-01') || str_starts_with($ts, '0001-01-01')) {
-        return null;
-    }
-    return $ts;
+    return handshakeTime($ts) === null ? null : $ts;
 }
 
 /**
@@ -222,6 +221,7 @@ function mapGatewayStatus(array $resp, string $profileName): array
             'relayAddress'     => $isConn ? ($p['relayAddress'] ?? '') : '',
             'latency'          => pbDurationNs($p['latency'] ?? null),
             'lastWireguardHandshake' => $isConn ? pbTimestamp($p['lastWireguardHandshake'] ?? null) : null,
+            'quantumResistance' => !empty($p['rosenpassEnabled']),
             // int64 arrives as a JSON string per the protobuf JSON mapping.
             'transferReceived' => $isConn ? (int) ($p['bytesRx'] ?? 0) : 0,
             'transferSent'     => $isConn ? (int) ($p['bytesTx'] ?? 0) : 0,
@@ -627,11 +627,8 @@ function humanBytes(int $bytes): string
  */
 function relativeTime(?string $iso): string
 {
-    if (!$iso || str_starts_with($iso, '0001-01-01')) {
-        return '-';
-    }
-    $ts = strtotime($iso);
-    if ($ts === false) {
+    $ts = handshakeTime($iso);
+    if ($ts === null) {
         return '-';
     }
     $delta = time() - $ts;

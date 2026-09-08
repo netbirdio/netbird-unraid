@@ -29,11 +29,12 @@
 # the ENABLE_ROSENPASS case below) rather than connect in the one mode that can
 # strand this host with nothing able to undo it.
 RP_GUARD_OK=0
-if [ -r /usr/local/emhttp/plugins/netbird/include/rosenpass.sh ]; then
+if [ -r /usr/local/emhttp/plugins/netbird/include/rosenpass.sh ] \
+    && [ -r /usr/local/emhttp/plugins/netbird/include/handshake.php ]; then
     . /usr/local/emhttp/plugins/netbird/include/rosenpass.sh
     RP_GUARD_OK=1
 else
-    log "WARN: include/rosenpass.sh missing; strict Rosenpass will be downgraded to permissive."
+    log "WARN: Rosenpass verification files missing; strict Rosenpass will be downgraded to permissive."
     rosenpass_guard() {
         if [ "${ENABLE_ROSENPASS:-0}" = "1" ]; then
             RP_GUARD_MSG="connected permissively; strict not armed because verification is unavailable"

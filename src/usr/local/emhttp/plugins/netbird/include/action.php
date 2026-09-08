@@ -159,14 +159,13 @@ function nb_up_args(array $creds): array
 const NB_ROSENPASS_WATCHDOG = '/usr/local/emhttp/plugins/netbird/scripts/rosenpass-watchdog.sh';
 
 /**
- * Whether the strict-Rosenpass safety net is installed and usable. Both halves
- * are needed: the watchdog script to run the check, and the shared guard it
- * sources to perform it.
+ * Whether the strict-Rosenpass watchdog, guard, and status parser are installed.
  */
 function nb_rosenpass_guard_available(): bool
 {
     return is_executable(NB_ROSENPASS_WATCHDOG)
-        && is_readable('/usr/local/emhttp/plugins/netbird/include/rosenpass.sh');
+        && is_readable('/usr/local/emhttp/plugins/netbird/include/rosenpass.sh')
+        && is_readable('/usr/local/emhttp/plugins/netbird/include/handshake.php');
 }
 
 /**
