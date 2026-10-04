@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Exercise CLI profile fallbacks without the JSON gateway
         run: |
           docker run --rm --network none -e NETBIRD_TEST_CONTAINER=1 \
