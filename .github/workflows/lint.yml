@@ -19,6 +19,18 @@ jobs:
             -v "$GITHUB_WORKSPACE/src/usr/local/emhttp/plugins/netbird:/usr/local/emhttp/plugins/netbird:ro" \
             -w /work php:8.2-cli php tests/rosenpass-test.php
 
+  profile-fallback-tests:
+    name: Profile fallback regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise CLI profile fallbacks without the JSON gateway
+        run: |
+          docker run --rm --network none -e NETBIRD_TEST_CONTAINER=1 \
+            -v "$GITHUB_WORKSPACE:/work:ro" \
+            -v "$GITHUB_WORKSPACE/src/usr/local/emhttp/plugins/netbird:/usr/local/emhttp/plugins/netbird:ro" \
+            -w /work php:8.2-cli php tests/profile-fallback-test.php
+
   php-cs-fixer:
     name: PHP-CS-Fixer
     runs-on: ubuntu-latest

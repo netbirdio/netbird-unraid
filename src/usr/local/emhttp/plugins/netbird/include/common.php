@@ -446,15 +446,37 @@ function listProfilesCli(): array
     if ($rc !== 0) {
         return [];
     }
+    return parseProfileList($out);
+}
+
+/**
+ * Parse current NAME/ACTIVE tables and legacy marker-first profile lists.
+ *
+ * @return array<int, array{name:string, active:bool}>
+ */
+function parseProfileList(string $out): array
+{
     $profiles = [];
+    $table = false;
     foreach (explode("\n", $out) as $line) {
         $line = trim($line);
-        // Skip the header line "Found N profiles:" and blanks.
-        if ($line === '' || stripos($line, 'Found') === 0) {
+        if ($line === '') {
             continue;
         }
-        // Lines are "✓ name" (active) or "✗ name" (passive).
-        if (preg_match('/^(✓|✗)\s+(.+)$/u', $line, $m)) {
+        if (!$table && preg_match('/^NAME\s+ACTIVE$/', $line)) {
+            $table = true;
+            continue;
+        }
+        if ($table) {
+            // The active marker follows the name; inactive rows have no marker.
+            // Preserve spaces in names created outside the plugin.
+            $active = preg_match('/^(.+?)\s+✓$/u', $line, $m) === 1;
+            $profiles[] = [
+                'name'   => $active ? $m[1] : $line,
+                'active' => $active,
+            ];
+        } elseif (preg_match('/^(✓|✗)\s+(.+)$/u', $line, $m)) {
+            // Older binaries print "Found N profiles:" then "✓ name"/"✗ name".
             $profiles[] = [
                 'name'   => $m[2],
                 'active' => $m[1] === '✓',

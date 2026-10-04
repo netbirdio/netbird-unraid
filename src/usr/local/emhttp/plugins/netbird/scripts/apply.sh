@@ -153,7 +153,13 @@ if [ "$MODE" = "ensure" ]; then
     # Prefer the JSON gateway for both checks; fall back to scraping CLI text
     # when the daemon predates it or was started without the socket.
     ACTIVE=$(nb_api GetActiveProfile | sed -n 's/.*"profileName":"\([^"]*\)".*/\1/p')
-    [ -n "$ACTIVE" ] || ACTIVE=$("$NB" profile list 2>/dev/null | awk '/^✓/{print $2}')
+    # Share the WebGUI's parser for both NAME/ACTIVE tables and older CLI lists.
+    [ -n "$ACTIVE" ] || ACTIVE=$(php -r '
+        require "/usr/local/emhttp/plugins/netbird/include/common.php";
+        foreach (Netbird\listProfilesCli() as $profile) {
+            if ($profile["active"]) { echo $profile["name"]; break; }
+        }
+    ' 2>/dev/null)
     # getFullPeerStatus is required: without it the daemon omits fullStatus
     # (and with it managementState) from the response entirely.
     STATUS_JSON=$(nb_api Status '{"getFullPeerStatus":true}')
