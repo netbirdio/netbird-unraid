@@ -7,6 +7,16 @@ on:
   pull_request:
 
 jobs:
+  installer-staging-tests:
+    name: Installer staging regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise private binary staging and cleanup
+        run: python3 tests/installer-staging-test.py
+
   rosenpass-tests:
     name: Rosenpass regression tests
     runs-on: ubuntu-latest

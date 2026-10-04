@@ -203,11 +203,16 @@ if [ "$NETBIRD_EXISTING" = "1" ] && [ "$NETBIRD_HAD_CFG" = "0" ]; then
 fi
 
 # Extract NetBird upstream binary into /usr/local/sbin
-mkdir -p /usr/local/sbin
-tar -xzf /boot/config/plugins/netbird/]]>&netbirdFile;<![CDATA[ -C /tmp/
-install -m 0755 /tmp/netbird /usr/local/sbin/netbird
-rm -f /tmp/netbird /tmp/LICENSE /tmp/README.md
-rm -rf /tmp/LICENSES
+# Stage only the binary in a private directory, leaving shared /tmp files alone.
+# Keep cleanup traps local to this step and stop the install if staging fails.
+(
+    NETBIRD_INSTALL_TMP=$(mktemp -d /tmp/netbird-install.XXXXXXXXXX) || exit 1
+    trap 'rm -rf -- "$NETBIRD_INSTALL_TMP"' EXIT
+    trap 'exit 1' HUP INT TERM
+    mkdir -p /usr/local/sbin \
+        && tar -xzf /boot/config/plugins/netbird/]]>&netbirdFile;<![CDATA[ -C "$NETBIRD_INSTALL_TMP" netbird \
+        && install -m 0755 "$NETBIRD_INSTALL_TMP/netbird" /usr/local/sbin/netbird
+) || exit 1
 
 # Persist NetBird's two state dirs on the USB flash via symlinks.
 # NetBird writes config/profile data to /etc/netbird and runtime state to /var/lib/netbird.
