@@ -26,3 +26,15 @@ container. They cover current NAME/ACTIVE tables, legacy marker-first lists,
 inactive profiles, whitespace, CLI failures, and the real apply script's no-op
 save behavior when the JSON gateway is unavailable. Do not run them on a live
 Unraid host.
+
+Run the installer staging tests with Python 3 and the standard Linux tools:
+
+```sh
+python3 tests/installer-staging-test.py
+```
+
+These tests run the binary installation block from `plugin/netbird.plg` with
+its paths redirected into a temporary sandbox. They check private staging,
+preservation of existing shared files and symlinks, cleanup after success or
+failure, termination handling, and installer shell syntax. No root access or
+running daemon is needed.
