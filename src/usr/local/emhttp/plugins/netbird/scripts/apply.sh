@@ -5,10 +5,10 @@
 #   mode = reregister | reconnect | ensure   (default: ensure)
 #
 # Called by action.php's "save" handler after it has written the global
-# netbird.cfg (ENABLE_NETBIRD, LOG_LEVEL) and the per-profile credential cfg
-# (profiles/<name>.cfg). We reconcile the running daemon WITHOUT a full restart:
-# ensure it's up, select the target profile, then run `up` with that profile's
-# own credentials. Selecting before `up` is what keeps profiles from crossing.
+# netbird.cfg and the per-profile credential cfg (profiles/<name>.cfg). Restart
+# the daemon only when its lazy connection override differs, then select the
+# target profile and run `up` with that profile's own credentials. Selecting
+# before `up` is what keeps profiles from crossing.
 #
 # Modes (NetBird ignores most setting changes on an already-connected profile):
 #   reregister — management URL or hostname changed. These are baked into the
@@ -134,10 +134,33 @@ if [ -f "$PROFILE_CFG" ]; then
     . "$PROFILE_CFG"
 fi
 
-# Ensure the daemon is running (start if down) — no forced restart on a save.
-if ! /usr/bin/pgrep -f "^${NB} service run" >/dev/null 2>&1; then
+# Compare the actual startup environment, not the previous saved cfg: a failed
+# apply must be retryable, and a no-op save must leave a healthy daemon alone.
+# Include the variable name so an empty override differs from an unset one.
+LAZY_ENV=""
+case "${LAZY_CONNECTION:-auto}" in
+    on|off) LAZY_ENV="NB_LAZY_CONN=$LAZY_CONNECTION" ;;
+esac
+DAEMON_PIDS=$(/usr/bin/pgrep -f "^${NB} service run")
+RESTART_DAEMON=0
+for pid in $DAEMON_PIDS; do
+    if [ ! -r "/proc/$pid/environ" ] \
+        || [ "$(tr '\0' '\n' < "/proc/$pid/environ" | grep '^NB_LAZY_CONN=')" != "$LAZY_ENV" ]; then
+        RESTART_DAEMON=1
+    fi
+done
+if [ "$RESTART_DAEMON" = "1" ]; then
+    log "Lazy connection override changed; restarting daemon."
+    if ! /etc/rc.d/rc.netbird restart; then
+        write_result false "could not restart NetBird to apply lazy connections"
+        exit 1
+    fi
+elif [ -z "$DAEMON_PIDS" ]; then
     log "Daemon not running; starting it."
-    /etc/rc.d/rc.netbird start
+    if ! /etc/rc.d/rc.netbird start; then
+        write_result false "could not start NetBird"
+        exit 1
+    fi
 fi
 
 # Wait for the daemon socket before talking to it.
@@ -172,7 +195,11 @@ if [ "$MODE" = "ensure" ]; then
     fi
     if [ "$ACTIVE" = "$PROFILE" ] && [ "$MGMT_UP" -ge 1 ]; then
         log "No credential change and '$PROFILE' already active+connected; nothing to apply."
-        write_result true "no change (already connected)"
+        if [ "$RESTART_DAEMON" = "1" ]; then
+            write_result true "lazy connections applied (connected)"
+        else
+            write_result true "no change (already connected)"
+        fi
         exit 0
     fi
 fi

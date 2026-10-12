@@ -1,3 +1,18 @@
+Run the lazy connection regression tests in a disposable container:
+
+```sh
+docker run --rm --network none -e NETBIRD_TEST_CONTAINER=1 \
+  -v "$PWD:/work:ro" -w /work \
+  php:8.2-cli php tests/lazy-connection-test.php
+```
+
+These tests run the production startup environment and apply lifecycle blocks
+against real process environments, with service operations stubbed. They cover
+all override transitions, unchanged saves, clearing inherited overrides, failed
+starts/restarts and retries, plus the real save endpoint's validation, disabled
+settings, persistence, and compatibility with older forms. No host networking
+or real NetBird daemon is used. Do not run them on a live Unraid host.
+
 Run the Rosenpass regression tests from the repository root:
 
 ```sh

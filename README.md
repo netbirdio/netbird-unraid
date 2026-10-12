@@ -58,6 +58,14 @@ A few NetBird behaviors are worth knowing when editing a profile:
   dashboard until you delete it there.
 - A **pre-shared key can be set or changed but not cleared** from the UI.
   Removing it requires erasing the profile and setting it up again.
+- **Lazy Connections** defaults to **Follow account setting**. Select **Enabled**
+  or **Disabled** to override it for this host across all profiles. Applying a
+  change restarts the daemon briefly; an unchanged save leaves it running.
+  Rosenpass keeps permanent connections regardless of this setting.
+  Use the plugin's setting instead of `netbird service reconfigure`, which
+  expects an upstream-managed service. The plugin controls `NB_LAZY_CONN`,
+  including clearing overrides inherited from `custom-params.sh` when following
+  the account setting. See the [NetBird lazy connections guide](https://docs.netbird.io/manage/peers/lazy-connection).
 
 ## Building locally
 

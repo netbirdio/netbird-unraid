@@ -422,7 +422,16 @@ switch ($action) {
         if (!in_array($rp, ['0', '1', 'permissive'], true)) {
             $rp = '0';
         }
-        $globalCfg = ['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns, 'ENABLE_ROSENPASS' => $rp];
+        // This daemon environment override is reconciled against the running
+        // process by apply.sh, so failed applies can be retried without editing
+        // the setting again. Older forms that omit it preserve the saved value.
+        $lazy = $_POST['LAZY_CONNECTION'] ?? (Netbird\readCfg()['LAZY_CONNECTION'] ?? 'auto');
+        if (!in_array($lazy, ['auto', 'on', 'off'], true)) {
+            http_response_code(400);
+            echo json_encode(['type' => 'error', 'message' => 'Invalid lazy connections setting.']);
+            break;
+        }
+        $globalCfg = ['ENABLE_NETBIRD' => $enable, 'LOG_LEVEL' => $log, 'ENABLE_SSH' => $ssh, 'MANAGE_DNS' => $dns, 'ENABLE_ROSENPASS' => $rp, 'LAZY_CONNECTION' => $lazy];
         $mode      = 'ensure';
 
         // Disabling is deliberately independent of profile state. A fresh

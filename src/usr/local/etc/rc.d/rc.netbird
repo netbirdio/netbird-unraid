@@ -68,6 +68,14 @@ start_netbird() {
         EXTRA_ARGS="$NETBIRD_CUSTOM_PARAMS"
     fi
 
+    # Lazy connections are a daemon environment override, not an `up` flag.
+    # Apply after custom-params.sh so the GUI owns this setting; auto must also
+    # clear any inherited override to follow the management account setting.
+    case "${LAZY_CONNECTION:-auto}" in
+        on|off) export NB_LAZY_CONN="$LAZY_CONNECTION" ;;
+        *)      unset NB_LAZY_CONN ;;
+    esac
+
     # Remove stale sockets left by an unclean exit. NetBird can't bind a socket
     # path that already exists on disk and exits immediately, which is why a
     # start right after a crash or hard kill would otherwise silently fail.

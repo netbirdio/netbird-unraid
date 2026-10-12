@@ -17,6 +17,7 @@ $enabled       = $cfg['ENABLE_NETBIRD']   ?? '0';
 $enableSsh     = $cfg['ENABLE_SSH']       ?? '0';
 $rosenpass     = $cfg['ENABLE_ROSENPASS'] ?? '0';
 $manageDns     = $cfg['MANAGE_DNS']       ?? '1';
+$lazyConnection = $cfg['LAZY_CONNECTION'] ?? 'auto';
 $logLevel      = $cfg['LOG_LEVEL']        ?? 'info';
 
 $enableCfg     = strtolower(trim((string) $enabled));
@@ -191,6 +192,17 @@ _(Manage DNS)_:
 When enabled (default), NetBird runs its own DNS resolver and rewrites <code>/etc/resolv.conf</code> so it can resolve NetBird domains and any nameservers your network defines. If this leaves the host unable to resolve regular internet names (see <a href="https://github.com/netbirdio/netbird-unraid/issues/2" target="_blank" rel="noopener noreferrer">issue #2</a>), set this to <b>No</b> to pass <code>--disable-dns</code> — NetBird then leaves the host's DNS untouched and uses your existing <code>/etc/resolv.conf</code>. The cleaner fix is usually to configure a nameserver group in the NetBird dashboard instead. Changing this reconnects NetBird to take effect.
 </blockquote>
 
+_(Lazy Connections)_:
+: <select name="LAZY_CONNECTION">
+  <?=mk_option($lazyConnection, "auto", _("Follow account setting"))?>
+  <?=mk_option($lazyConnection, "on", _("Enabled"))?>
+  <?=mk_option($lazyConnection, "off", _("Disabled"))?>
+  </select>
+
+<blockquote class="inline_help">
+Lazy connections open peer connections when traffic needs them, reducing resource use but adding a short delay to the first request to an idle peer. <b>Follow account setting</b> (default) uses the setting from your NetBird management server. <b>Enabled</b> or <b>Disabled</b> overrides it for this Unraid host across all profiles. Changing this restarts NetBird and briefly interrupts its connections. Rosenpass keeps permanent connections regardless of this setting.
+</blockquote>
+
 _(Enable NetBird SSH)_:
 : <select name="ENABLE_SSH">
   <?=mk_option($enableSsh, "0", _("No"))?>
@@ -279,6 +291,7 @@ function nbSaveSettings() {
         ENABLE_SSH:     $('select[name=ENABLE_SSH]', form).val(),
         ENABLE_ROSENPASS: $('select[name=ENABLE_ROSENPASS]', form).val(),
         MANAGE_DNS:     $('select[name=MANAGE_DNS]', form).val(),
+        LAZY_CONNECTION: $('select[name=LAZY_CONNECTION]', form).val(),
         LOG_LEVEL:      $('select[name=LOG_LEVEL]', form).val(),
         MANAGEMENT_URL: $('input[name=MANAGEMENT_URL]', form).val(),
         SETUP_KEY:      $('input[name=SETUP_KEY]', form).val(),

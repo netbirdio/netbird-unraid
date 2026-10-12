@@ -7,6 +7,19 @@ on:
   pull_request:
 
 jobs:
+  lazy-connection-tests:
+    name: Lazy connection regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exercise daemon overrides and settings persistence
+        run: |
+          docker run --rm --network none -e NETBIRD_TEST_CONTAINER=1 \
+            -v "$GITHUB_WORKSPACE:/work:ro" -w /work \
+            php:8.2-cli php tests/lazy-connection-test.php
+
   installer-staging-tests:
     name: Installer staging regression tests
     runs-on: ubuntu-latest
