@@ -25,11 +25,12 @@ nb_webgui_note() {
 # LAN interface names that have an address now. Unraid also scans wg tunnels,
 # but skips some tunnel types; naming one in include_interfaces would bypass
 # that, and Unraid reloads nginx itself when tunnels change.
+# VLAN devices print as name@parent (eth0.10@eth0); drop the parent first.
 nb_lan_ifaces() {
     ip -br addr show scope global primary -deprecated 2>/dev/null \
-        | awk '$1 ~ /^(br|bond|eth|wlan)[0-9]+(\.[0-9]+)?$/ && $3 != "" {
+        | awk '{
             gsub(/@.*/, "", $1)
-            print $1
+            if ($1 ~ /^(br|bond|eth|wlan)[0-9]+(\.[0-9]+)?$/ && $3 != "") print $1
           }' \
         | sort -u
 }
