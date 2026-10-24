@@ -22,10 +22,12 @@ nb_webgui_note() {
     ) 2>/dev/null || true
 }
 
-# Interface names Unraid's own nginx scan would bind, that have an address now.
+# LAN interface names that have an address now. Unraid also scans wg tunnels,
+# but skips some tunnel types; naming one in include_interfaces would bypass
+# that, and Unraid reloads nginx itself when tunnels change.
 nb_lan_ifaces() {
     ip -br addr show scope global primary -deprecated 2>/dev/null \
-        | awk '$1 ~ /^(br|bond|eth|wlan|wg)[0-9]+(\.[0-9]+)?$/ && $3 != "" {
+        | awk '$1 ~ /^(br|bond|eth|wlan)[0-9]+(\.[0-9]+)?$/ && $3 != "" {
             gsub(/@.*/, "", $1)
             print $1
           }' \
@@ -85,7 +87,7 @@ nb_recorded_lan_ifaces() {
     [ -n "$_vals" ] || return 0
     # shellcheck disable=SC2086
     printf '%s\n' $_vals \
-        | awk '$1 ~ /^(br|bond|eth|wlan|wg)[0-9]+(\.[0-9]+)?$/ { print $1 }'
+        | awk '$1 ~ /^(br|bond|eth|wlan)[0-9]+(\.[0-9]+)?$/ { print $1 }'
 }
 
 # First global IPv4 on one interface, or nothing when it has no address.
