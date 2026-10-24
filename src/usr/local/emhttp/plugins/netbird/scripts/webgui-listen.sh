@@ -151,15 +151,19 @@ nb_iface_waiting() {
 #   0  nginx is bound to every one that has an address, including a LAN one
 #   1  one has an address nginx is not bound to, so reload
 #   2  one is up without an address yet, or no LAN one is bound, so wait
+# NB_WEBGUI_WAITING is 1 when some interface is up without an address, which
+# is the only state 2 worth following with an address watcher.
 nb_webgui_state() {
     _state=0
     _lan_bound=0
+    NB_WEBGUI_WAITING=0
     for _iface in $(nb_recorded_lan_ifaces) wt0; do
         nb_is_excluded "$_iface" && continue
         _ip=$(nb_iface_v4 "$_iface")
         if [ -z "$_ip" ]; then
-            if nb_iface_waiting "$_iface" && [ "$_state" -eq 0 ]; then
-                _state=2
+            if nb_iface_waiting "$_iface"; then
+                NB_WEBGUI_WAITING=1
+                [ "$_state" -eq 0 ] && _state=2
             fi
             continue
         fi
@@ -175,9 +179,48 @@ nb_webgui_state() {
     return "$_state"
 }
 
+# Follow address events in the background until nginx is bound, for a LAN
+# interface still waiting on DHCP after the polling window. Stops when state
+# 0 is reached, when nothing is waiting any more (interface went down or
+# away), or when ip monitor exits. One watcher at a time.
+: "${NB_WEBGUI_WATCH_PID:=/var/run/netbird/webgui-watch.pid}"
+nb_watch_addresses() {
+    if [ -f "$NB_WEBGUI_WATCH_PID" ] && kill -0 "$(cat "$NB_WEBGUI_WATCH_PID" 2>/dev/null)" 2>/dev/null; then
+        return 0
+    fi
+    mkdir -p "$(dirname "$NB_WEBGUI_WATCH_PID")" 2>/dev/null
+    (
+        _fifo=$(mktemp -u /tmp/netbird-webgui.XXXXXX) || exit 1
+        mkfifo -m 600 "$_fifo" || exit 1
+        trap 'kill "$_mon" 2>/dev/null; rm -f "$_fifo" "$NB_WEBGUI_WATCH_PID"' EXIT
+        ip monitor address > "$_fifo" 2>/dev/null &
+        _mon=$!
+        exec 3< "$_fifo"
+        while read -r _ev <&3; do
+            nb_ensure_webgui_interfaces
+            _s=0
+            nb_webgui_state || _s=$?
+            if [ "$_s" -eq 1 ]; then
+                nb_nginx_reload
+                _s=0
+                nb_webgui_state || _s=$?
+            fi
+            [ "$_s" -eq 0 ] && break
+            [ "$NB_WEBGUI_WAITING" -eq 1 ] || break
+        done
+        case $_s in
+            0) nb_webgui_note "WebGUI bound after address change: $(nb_include_interfaces)" ;;
+            1) nb_webgui_note "WARN: nginx is not bound to every WebGUI interface: $(nb_include_interfaces)" ;;
+        esac
+    ) >/dev/null 2>&1 </dev/null &
+    echo $! > "$NB_WEBGUI_WATCH_PID"
+    nb_webgui_note "WebGUI waiting on a LAN address; watching for it"
+}
+
 # Reload nginx, then keep checking for up to 12 seconds. A LAN interface that
 # gets its address during the wait is recorded and nginx is reloaded for it.
-# Reload again whenever an address is up that nginx is not bound to.
+# Reload again whenever an address is up that nginx is not bound to. If an
+# interface is still waiting on an address at the end, hand off to the watcher.
 nb_reload_nginx_keep_lan() {
     nb_ensure_webgui_interfaces
     nb_nginx_reload
@@ -194,7 +237,10 @@ nb_reload_nginx_keep_lan() {
         nb_webgui_state || _s=$?
         [ "$_s" -eq 1 ] && nb_nginx_reload
     done
-    [ "$_s" -eq 1 ] || return 0
+    if [ "$_s" -eq 2 ]; then
+        [ "$NB_WEBGUI_WAITING" -eq 1 ] && nb_watch_addresses
+        return 0
+    fi
     nb_webgui_note "WARN: nginx is not bound to every WebGUI interface: $(nb_include_interfaces)"
     return 1
 }
