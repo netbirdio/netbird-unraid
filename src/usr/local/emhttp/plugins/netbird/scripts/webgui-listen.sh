@@ -5,8 +5,8 @@
 # include_interfaces. A reload while the LAN interface has no address saves a
 # config that only lists wt0, and that sticks until something reloads nginx
 # again. Record the LAN interfaces once they have an address, and retry the
-# reload until nginx is bound to the WebGUI port on those addresses. A
-# recorded LAN interface that has no address yet is retried too.
+# reload until nginx is bound to the WebGUI port on those addresses and on wt0.
+# A LAN interface that is up but has no address yet is waited on.
 
 PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
 export PATH
@@ -32,15 +32,28 @@ nb_lan_ifaces() {
         | sort -u
 }
 
-# Value of include_interfaces. Unraid sources the file, so a quoted or a
-# bare assignment are both real configs.
-nb_include_interfaces() {
+# Value of include_interfaces or exclude_interfaces. Unraid sources the file,
+# so a quoted or a bare assignment are both real configs.
+nb_cfg_list() {
     [ -f "$NB_NGINX_EXTRA" ] || return 0
-    _line=$(grep -m1 '^include_interfaces=' "$NB_NGINX_EXTRA" || true)
-    _val=${_line#include_interfaces=}
+    _line=$(grep -m1 "^$1=" "$NB_NGINX_EXTRA" || true)
+    _val=${_line#"$1"=}
     _val=${_val#\"}
     _val=${_val%\"}
     printf '%s\n' "$_val"
+}
+
+nb_include_interfaces() {
+    nb_cfg_list include_interfaces
+}
+
+# Unraid drops exclude_interfaces after adding include_interfaces, so nginx
+# never binds these and they are not waited on.
+nb_is_excluded() {
+    case " $(nb_cfg_list exclude_interfaces) " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
 }
 
 # include_interfaces gains wt0 and any LAN interface that is up. Other lines
@@ -114,36 +127,61 @@ nb_nginx_reload() {
     /etc/rc.d/rc.nginx reload >/dev/null 2>&1 || true
 }
 
-# At least one recorded LAN interface has an address, and nginx has each of them.
-nb_recorded_lan_bound() {
-    _up=0
-    _missing=0
-    for _iface in $(nb_recorded_lan_ifaces); do
-        _ip=$(nb_iface_v4 "$_iface")
-        [ -n "$_ip" ] || continue
-        _up=1
-        nb_nginx_has_ip "$_ip" || _missing=1
-    done
-    [ "$_up" -eq 1 ] && [ "$_missing" -eq 0 ]
+# An interface with no IPv4 may still be waiting on DHCP when its link is up.
+# One that is missing or down is treated as stale and not waited on.
+nb_iface_waiting() {
+    ip -br link show dev "$1" 2>/dev/null \
+        | awk '$2 == "UP" || $2 == "UNKNOWN" { found=1 } END { exit !found }'
 }
 
-# Reload nginx, then reload again until a recorded LAN address is bound by
-# nginx. An empty address list is not success when a LAN interface was
-# already recorded: it may get its address during this wait.
+# Where the WebGUI listen set stands for the recorded LAN interfaces and wt0:
+#   0  nginx is bound to every one that has an address, including a LAN one
+#   1  one has an address nginx is not bound to, so reload
+#   2  one is up without an address yet, or no LAN one is bound, so wait
+nb_webgui_state() {
+    _state=0
+    _lan_bound=0
+    for _iface in $(nb_recorded_lan_ifaces) wt0; do
+        nb_is_excluded "$_iface" && continue
+        _ip=$(nb_iface_v4 "$_iface")
+        if [ -z "$_ip" ]; then
+            if nb_iface_waiting "$_iface" && [ "$_state" -eq 0 ]; then
+                _state=2
+            fi
+            continue
+        fi
+        if nb_nginx_has_ip "$_ip"; then
+            [ "$_iface" = wt0 ] || _lan_bound=1
+        else
+            _state=1
+        fi
+    done
+    if [ "$_state" -eq 0 ] && [ "$_lan_bound" -eq 0 ]; then
+        _state=2
+    fi
+    return "$_state"
+}
+
+# Reload nginx, then keep checking for up to 12 seconds. A LAN interface that
+# gets its address during the wait is recorded and nginx is reloaded for it.
+# Reload again whenever an address is up that nginx is not bound to.
 nb_reload_nginx_keep_lan() {
     nb_ensure_webgui_interfaces
-    _want=$(nb_recorded_lan_ifaces | tr '\n' ' ')
     nb_nginx_reload
-    [ -n "$_want" ] || return 0
     _n=0
-    while [ "$_n" -lt 6 ]; do
-        nb_recorded_lan_bound && return 0
+    while :; do
+        _s=0
+        nb_webgui_state || _s=$?
+        [ "$_s" -eq 0 ] && return 0
+        [ "$_n" -lt 6 ] || break
         _n=$((_n + 1))
         sleep 2
         nb_ensure_webgui_interfaces
-        nb_nginx_reload
+        _s=0
+        nb_webgui_state || _s=$?
+        [ "$_s" -eq 1 ] && nb_nginx_reload
     done
-    nb_recorded_lan_bound && return 0
-    nb_webgui_note "WARN: WebGUI reload lost LAN listen address(es): $_want"
+    [ "$_s" -eq 1 ] || return 0
+    nb_webgui_note "WARN: nginx is not bound to every WebGUI interface: $(nb_include_interfaces)"
     return 1
 }

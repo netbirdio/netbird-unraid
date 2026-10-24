@@ -94,7 +94,8 @@ reload_nginx_when_wt0_ready() {
     (
         exec 9>&-
         for _ in $(seq 1 15); do
-            if ip -4 addr show wt0 >/dev/null 2>&1; then
+            # ip -4 addr show exits 0 for wt0 with no IPv4; wait for the address.
+            if [ -n "$(ip -4 -o addr show dev wt0 2>/dev/null)" ]; then
                 if command -v nb_reload_nginx_keep_lan >/dev/null 2>&1; then
                     nb_reload_nginx_keep_lan
                 else
