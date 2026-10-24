@@ -249,7 +249,24 @@ if [ -f /usr/local/emhttp/plugins/netbird/scripts/webgui-listen.sh ]; then
     nb_ensure_webgui_interfaces
     echo "  updated $NB_NGINX_EXTRA include_interfaces"
 else
-    echo "  WARN: webgui-listen.sh missing; left network-extra.cfg unchanged"
+    # The helper did not install. Still make sure wt0 is listed, touching only
+    # the include_interfaces line.
+    NEC=/boot/config/network-extra.cfg
+    NEC_INC=$(grep -m1 '^include_interfaces=' "$NEC" 2>/dev/null | tr -d '\r' | sed 's/^include_interfaces=//; s/^"//; s/"$//')
+    case " $NEC_INC " in
+        *" wt0 "*) ;;
+        *)
+            if [ -f "$NEC" ] && grep -q '^include_interfaces=' "$NEC"; then
+                sed -i "s|^include_interfaces=.*|include_interfaces=\"${NEC_INC:+$NEC_INC }wt0\"|" "$NEC"
+            elif [ -f "$NEC" ]; then
+                [ -n "$(tail -c1 "$NEC")" ] && printf '\n' >> "$NEC"
+                printf 'include_interfaces="wt0"\n' >> "$NEC"
+            else
+                printf 'include_interfaces="wt0"\nexclude_interfaces=""\n' > "$NEC"
+            fi
+            ;;
+    esac
+    echo "  WARN: webgui-listen.sh missing; only added wt0 to $NEC"
 fi
 
 # On upgrades or reinstalls with preserved settings, restart an enabled daemon
