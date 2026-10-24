@@ -24,6 +24,12 @@
 # each other. Result of the run is written to RESULT_FILE for the UI to poll.
 
 . /usr/local/emhttp/plugins/netbird/include/log.sh 2>/dev/null || log() { echo "$*" ; }
+# Reload nginx onto wt0 without dropping the LAN listen addresses. Optional so
+# a partial install still connects; the installer writes the same interfaces.
+if [ -f /usr/local/emhttp/plugins/netbird/scripts/webgui-listen.sh ]; then
+    # shellcheck disable=SC1091
+    . /usr/local/emhttp/plugins/netbird/scripts/webgui-listen.sh
+fi
 # Strict-Rosenpass safety net, shared with the watchdog the Connect / profile
 # switch / boot paths fire. If it's missing we refuse to arm strict at all (see
 # the ENABLE_ROSENPASS case below) rather than connect in the one mode that can
@@ -89,7 +95,11 @@ reload_nginx_when_wt0_ready() {
         exec 9>&-
         for _ in $(seq 1 15); do
             if ip -4 addr show wt0 >/dev/null 2>&1; then
-                /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+                if command -v nb_reload_nginx_keep_lan >/dev/null 2>&1; then
+                    nb_reload_nginx_keep_lan
+                else
+                    /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+                fi
                 exit 0
             fi
             sleep 2

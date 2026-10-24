@@ -237,20 +237,19 @@ ln -s /boot/config/plugins/netbird/lib /var/lib/netbird
 echo "lib" >> /boot/config/plugins/netbird/.gitignore
 echo "etc/.cache" >> /boot/config/plugins/netbird/.gitignore
 
-# Add wt0 to Unraid's nginx include list so the WebGUI binds to the NetBird IP.
-NEC=/boot/config/network-extra.cfg
-if [ -f "$NEC" ] && grep -q '^include_interfaces=' "$NEC" ; then
-    if ! grep -q 'wt0' "$NEC" ; then
-        sed -i 's/^include_interfaces="\(.*\)"/include_interfaces="\1 wt0"/' "$NEC"
-        sed -i 's/include_interfaces=" /include_interfaces="/' "$NEC"
-        echo "  added wt0 to existing include_interfaces in $NEC"
-    fi
+# Add wt0 to Unraid's nginx include list so the WebGUI binds to the NetBird IP,
+# and keep the LAN interfaces that are up now. A file that only names wt0 is
+# fine while br0 has an address (Unraid adds those on its own). It is not fine
+# if nginx is reloaded while the LAN interface has none: the saved listen list
+# is then only wt0. Naming the LAN interfaces, without replacing other lines
+# such as exclude_interfaces, is what keeps the WebGUI on the LAN.
+if [ -f /usr/local/emhttp/plugins/netbird/scripts/webgui-listen.sh ]; then
+    # shellcheck disable=SC1091
+    . /usr/local/emhttp/plugins/netbird/scripts/webgui-listen.sh
+    nb_ensure_webgui_interfaces
+    echo "  updated $NB_NGINX_EXTRA include_interfaces"
 else
-    cat > "$NEC" <<NEOF
-include_interfaces="wt0"
-exclude_interfaces=""
-NEOF
-    echo "  wrote $NEC with include_interfaces=\"wt0\""
+    echo "  WARN: webgui-listen.sh missing; left network-extra.cfg unchanged"
 fi
 
 # On upgrades or reinstalls with preserved settings, restart an enabled daemon
@@ -283,7 +282,11 @@ if [ "$NETBIRD_EXISTING" = "1" ] || [ "$NETBIRD_HAD_CFG" = "1" ]; then
         (
             for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
                 if ip -4 addr show wt0 >/dev/null 2>&1; then
-                    /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+                    if command -v nb_reload_nginx_keep_lan >/dev/null 2>&1; then
+                        nb_reload_nginx_keep_lan
+                    else
+                        /etc/rc.d/rc.nginx reload >/dev/null 2>&1
+                    fi
                     exit 0
                 fi
                 sleep 2
