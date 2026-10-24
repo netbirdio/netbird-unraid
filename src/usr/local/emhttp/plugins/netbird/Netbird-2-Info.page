@@ -27,7 +27,7 @@ if (is_readable($pluginFile)) {
     <tr><td><b>NetBird version</b></td><td><?=htmlspecialchars($netbirdVer)?></td></tr>
     <tr><td><b>NetBird binary</b></td><td><code>/usr/local/sbin/netbird</code></td></tr>
     <tr><td><b>Config dir</b></td><td><code>/boot/config/plugins/netbird/etc</code> &rarr; <code>/etc/netbird</code></td></tr>
-    <tr><td><b>State dir</b></td><td><code>/boot/config/plugins/netbird/lib</code> &rarr; <code>/var/lib/netbird</code></td></tr>
+    <tr><td><b>State dir</b></td><td><code>/boot/config/plugins/netbird/lib</code> &rarr; <code>/var/lib/netbird</code> (identity). Runtime files: <code>/var/run/netbird</code></td></tr>
     <tr><td><b>Log file</b></td><td><code>/var/log/netbird.log</code></td></tr>
     <tr><td><b>Daemon socket</b></td><td><code>/var/run/netbird.sock</code></td></tr>
 </table>

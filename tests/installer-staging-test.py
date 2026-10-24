@@ -30,7 +30,7 @@ class InstallerStagingTest(unittest.TestCase):
         plugin = ET.parse(ROOT / "plugin/netbird.plg").getroot()
         self.install_script = plugin.find("./FILE[@Run='/bin/bash']/INLINE").text
         block = self.install_script.split("# Extract NetBird upstream binary into /usr/local/sbin\n", 1)[1]
-        block = block.split("# Persist NetBird's two state dirs", 1)[0]
+        block = block.split("# Persist NetBird's identity on the USB flash", 1)[0]
         # Run the actual installer code, changing only its absolute destinations.
         self.block = (block.replace("/tmp/", str(self.shared) + "/")
                       .replace("/usr/local/sbin", str(self.sbin))

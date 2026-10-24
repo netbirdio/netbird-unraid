@@ -38,8 +38,10 @@ plain init, so this plugin:
 2. Drops the binary at `/usr/local/sbin/netbird`.
 3. Once enabled, runs `netbird service run` from `/etc/rc.d/rc.netbird`
    (foreground daemon, logging to `/var/log/netbird.log`).
-4. Symlinks NetBird's two state paths onto the flash drive so the identity
-   survives Unraid's ephemeral rootfs:
+4. Symlinks NetBird's config paths onto the flash drive so the peer
+   identity survives Unraid's ephemeral rootfs. The files NetBird rewrites
+   while it is running, `state.json` and the `resolv.conf` backup, are
+   sent to `/var/run/netbird` on the root ramdisk instead:
 
    | NetBird default      | Symlinked to                          |
    | -------------------- | ------------------------------------- |
