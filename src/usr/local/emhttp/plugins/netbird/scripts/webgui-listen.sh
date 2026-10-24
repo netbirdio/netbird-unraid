@@ -8,7 +8,11 @@
 # reload until nginx is bound to the WebGUI port on those addresses and on wt0.
 # A LAN interface that is up but has no address yet is waited on.
 
-PATH=/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin
+# ip and ss live in the sbin dirs; add them without replacing the caller's PATH.
+case ":${PATH:-}:" in
+    *:/usr/sbin:*) ;;
+    *) PATH="${PATH:+$PATH:}/usr/local/sbin:/usr/sbin:/sbin" ;;
+esac
 export PATH
 
 : "${NB_NGINX_EXTRA:=/boot/config/network-extra.cfg}"
@@ -35,11 +39,12 @@ nb_lan_ifaces() {
         | sort -u
 }
 
-# Value of include_interfaces or exclude_interfaces. Unraid sources the file,
-# so a quoted or a bare assignment are both real configs.
+# Value of include_interfaces or exclude_interfaces. Unraid sources the file
+# through fromdos, so a quoted or a bare assignment and CRLF endings are all
+# real configs.
 nb_cfg_list() {
     [ -f "$NB_NGINX_EXTRA" ] || return 0
-    _line=$(grep -m1 "^$1=" "$NB_NGINX_EXTRA" || true)
+    _line=$(grep -m1 "^$1=" "$NB_NGINX_EXTRA" | tr -d '\r')
     _val=${_line#"$1"=}
     _val=${_val#\"}
     _val=${_val%\"}
@@ -75,6 +80,11 @@ nb_ensure_webgui_interfaces() {
         [ "$_existing" = "$_merged" ] && return 0
         sed -i "s|^include_interfaces=.*|include_interfaces=\"${_merged}\"|" "$NB_NGINX_EXTRA"
     elif [ -f "$NB_NGINX_EXTRA" ]; then
+        # A file saved without a final newline would otherwise join two lines.
+        # $(...) drops a trailing newline, so a non-empty result means none.
+        if [ -n "$(tail -c1 "$NB_NGINX_EXTRA")" ]; then
+            printf '\n' >> "$NB_NGINX_EXTRA"
+        fi
         printf 'include_interfaces="%s"\n' "$_merged" >> "$NB_NGINX_EXTRA"
     else
         printf 'include_interfaces="%s"\nexclude_interfaces=""\n' "$_merged" > "$NB_NGINX_EXTRA"
