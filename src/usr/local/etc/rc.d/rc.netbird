@@ -132,7 +132,7 @@ start_netbird() {
             || rm -f /var/lib/netbird/resolv.conf
     fi
     if [ -d /var/lib/netbird ]; then
-        find /var/lib/netbird -type f \( -name state.json -o -name '*.state.json' -o -name resolv.conf \) -exec rm -f {} +
+        find -H /var/lib/netbird -type f \( -name state.json -o -name '*.state.json' -o -name resolv.conf \) -exec rm -f {} +
     fi
     unset _nb_state_src _nb_active_id _nb_active_user
     # 9>&- drops the serialization lock descriptor before handing off to the
