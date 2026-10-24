@@ -12,6 +12,7 @@ rm -rf /boot/config/plugins/netbird/etc/*
 rm -rf /boot/config/plugins/netbird/lib/*
 rm -rf /boot/config/plugins/netbird/profiles
 rm -f  /boot/config/plugins/netbird/netbird.cfg
+rm -rf /var/run/netbird
 
 # No restart here: deleting netbird.cfg reverts the install to the packaged
 # default (disabled), so rc.netbird's start would refuse anyway. An erased

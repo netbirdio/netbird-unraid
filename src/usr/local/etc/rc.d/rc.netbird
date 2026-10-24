@@ -91,6 +91,50 @@ start_netbird() {
 
     log "Starting netbird: $DAEMON service run --daemon-addr $DAEMON_ADDR --log-file $LOGFILE $JSON_ARGS $EXTRA_ARGS"
     mkdir -p /var/lib/netbird /etc/netbird
+
+    # state.json is rewritten whenever daemon state is dirty (checked every
+    # 10s) and the resolv.conf backup is rewritten whenever DNS is applied.
+    # Both follow /var/lib/netbird, which this plugin symlinks onto the USB
+    # boot device. Point just those two files at the root ramdisk. Do not set
+    # NB_STATE_DIR: that also moves default.json and the peer identity would
+    # not survive a reboot. Set these after custom-params.sh so they cannot
+    # be aimed back at the flash drive.
+    RUNTIME_STATE_DIR=/var/run/netbird
+    mkdir -p "$RUNTIME_STATE_DIR"
+    chmod 700 "$RUNTIME_STATE_DIR"
+    export NB_DNS_STATE_FILE="$RUNTIME_STATE_DIR/state.json"
+    export NB_UNCLEAN_SHUTDOWN_RESOLV_FILE="$RUNTIME_STATE_DIR/resolv.conf"
+    # Move the active profile's existing state off the boot device once, so
+    # this start can still undo a crashed run. The default profile uses
+    # state.json; a named profile uses <user>/<id>.state.json. Then delete
+    # every leftover hot file. Identity files stay where they are.
+    _nb_state_src="/var/lib/netbird/state.json"
+    if [ -f /var/lib/netbird/active_profile.json ]; then
+        _nb_active_id=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /var/lib/netbird/active_profile.json | head -n 1)
+        _nb_active_user=$(sed -n 's/.*"username"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /var/lib/netbird/active_profile.json | head -n 1)
+        case "$_nb_active_id" in
+            ""|default) _nb_state_src="/var/lib/netbird/state.json" ;;
+            *[!A-Za-z0-9._-]*) _nb_state_src="" ;;
+            *)
+                case "$_nb_active_user" in
+                    *[!A-Za-z0-9._-]*) _nb_state_src="" ;;
+                    "") _nb_state_src="/var/lib/netbird/${_nb_active_id}.state.json" ;;
+                    *) _nb_state_src="/var/lib/netbird/${_nb_active_user}/${_nb_active_id}.state.json" ;;
+                esac
+                ;;
+        esac
+    fi
+    if [ -f "$_nb_state_src" ] && [ ! -f "$NB_DNS_STATE_FILE" ]; then
+        mv "$_nb_state_src" "$NB_DNS_STATE_FILE" || rm -f "$_nb_state_src"
+    fi
+    if [ -f /var/lib/netbird/resolv.conf ] && [ ! -f "$NB_UNCLEAN_SHUTDOWN_RESOLV_FILE" ]; then
+        mv /var/lib/netbird/resolv.conf "$NB_UNCLEAN_SHUTDOWN_RESOLV_FILE" \
+            || rm -f /var/lib/netbird/resolv.conf
+    fi
+    if [ -d /var/lib/netbird ]; then
+        find -H /var/lib/netbird -type f \( -name state.json -o -name '*.state.json' -o -name resolv.conf \) -exec rm -f {} +
+    fi
+    unset _nb_state_src _nb_active_id _nb_active_user
     # 9>&- drops the serialization lock descriptor before handing off to the
     # daemon. Without it the long-lived daemon inherits the lock and holds it
     # until it exits, wedging every subsequent start/stop/restart. The same

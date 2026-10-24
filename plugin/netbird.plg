@@ -217,8 +217,10 @@ fi
         && install -m 0755 "$NETBIRD_INSTALL_TMP/netbird" /usr/local/sbin/netbird
 ) || exit 1
 
-# Persist NetBird's two state dirs on the USB flash via symlinks.
-# NetBird writes config/profile data to /etc/netbird and runtime state to /var/lib/netbird.
+# Persist NetBird's identity on the USB flash via symlinks.
+# Profile config lives in /etc/netbird (legacy) and /var/lib/netbird
+# (default.json and the active profile). rc.netbird sends the hot files
+# state.json and resolv.conf to /var/run/netbird so they stay off the flash.
 mkdir -p /boot/config/plugins/netbird/etc
 mkdir -p /boot/config/plugins/netbird/lib
 
