@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.10.17.1504">
+<!ENTITY version     "2026.10.24.2232">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "48c1cf4e3334512727e051a13569354d02785a49e9f188f10a0c36f01ff1ff39">
+<!ENTITY pkgSHA256     "9e86a932f7ee1368900fa0afb3f786f4727340e60385a113972787210792d709">
 ]>
 
 <PLUGIN
@@ -36,6 +36,16 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.10.24.2232
+
+**Bug Fixes**
+
+- fix: stop writing state files to the boot device (#62)
+
+**Maintenance**
+
+- chore: update NetBird to 0.81.3 (#60)
 
 ### 2026.10.17.1504
 
@@ -126,12 +136,6 @@
 **Maintenance**
 
 - chore: update NetBird to 0.76.0 (#34)
-
-### 2026.07.28.1525
-
-**Maintenance**
-
-- chore: update NetBird to 0.75.1 (#33)
 
 Older releases: https://github.com/netbirdio/netbird-unraid/releases
 
