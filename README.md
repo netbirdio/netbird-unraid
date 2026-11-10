@@ -60,6 +60,9 @@ A few NetBird behaviors are worth knowing when editing a profile:
   dashboard until you delete it there.
 - A **pre-shared key can be set or changed but not cleared** from the UI.
   Removing it requires erasing the profile and setting it up again.
+- **Rosenpass is deprecated** and support may be removed in a future release.
+  It continues to work; no action is needed for existing configurations.
+  See the [upstream deprecation notice](https://github.com/netbirdio/netbird/pull/8372).
 - **Lazy Connections** defaults to **Follow account setting**. Select **Enabled**
   or **Disabled** to override it for this host across all profiles. Applying a
   change restarts the daemon briefly; an unchanged save leaves it running.

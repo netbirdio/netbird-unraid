@@ -214,14 +214,15 @@ Runs NetBird's built-in SSH server so other peers can SSH into this Unraid host 
 </blockquote>
 
 _(Enable Rosenpass)_:
-: <select name="ENABLE_ROSENPASS">
+: <select name="ENABLE_ROSENPASS" aria-describedby="nb-rosenpass-deprecation">
   <?=mk_option($rosenpass, "0", _("No"))?>
   <?=mk_option($rosenpass, "permissive", _("Yes (permissive, recommended)"))?>
   <?=mk_option($rosenpass, "1", _("Yes (strict)"))?>
   </select>
+  <br><span id="nb-rosenpass-deprecation"><b>Deprecated:</b> Rosenpass support may be removed in a future release. It continues to work; no action is needed for existing configurations.</span>
 
 <blockquote class="inline_help">
-Enables <a href="https://docs.netbird.io/client/post-quantum-cryptography" target="_blank" rel="noopener noreferrer">Rosenpass post-quantum cryptography</a>, which NetBird marks <b>experimental</b>: WireGuard pre-shared keys are negotiated with a quantum-resistant handshake. It is agreed per pair of peers, so <b>both ends need it enabled</b> before a link is actually protected — there is no network-wide switch in the dashboard. <b>Yes (permissive)</b> uses Rosenpass with peers that have it and plain WireGuard with those that don't; it is the right choice for a mixed network and can never cut a peer off. <b>Yes (strict)</b> refuses every peer that does not run Rosenpass: those peers lose this host while NetBird still reports them as "Connected", and the setting survives a reboot, so recovering a headless server needs another peer with Rosenpass or local access to the machine. Changing this reconnects NetBird to take effect.
+Enables <a href="https://docs.netbird.io/client/post-quantum-cryptography" target="_blank" rel="noopener noreferrer">Rosenpass post-quantum cryptography</a>: WireGuard pre-shared keys are negotiated with a quantum-resistant handshake. It is agreed per pair of peers, so <b>both ends need it enabled</b> before a link is actually protected — there is no network-wide switch in the dashboard. <b>Yes (permissive)</b> uses Rosenpass with peers that have it and plain WireGuard with those that don't; it is the right choice for a mixed network and can never cut a peer off. <b>Yes (strict)</b> refuses every peer that does not run Rosenpass: those peers lose this host while NetBird still reports them as "Connected", and the setting survives a reboot, so recovering a headless server needs another peer with Rosenpass or local access to the machine. Changing this reconnects NetBird to take effect.
 </blockquote>
 
 : <input type="button" value="_(Apply)_" onclick="nbSaveSettings()"><input type="button" value="_(Done)_" onclick="done()">
