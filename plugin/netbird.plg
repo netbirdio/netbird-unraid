@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.11.10.1441">
+<!ENTITY version     "2026.11.14.1303">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "d8433c170760dc53889751ec8dcc5a48320c089c031c3534c6f41b2720431418">
+<!ENTITY pkgSHA256     "0820792220d31024341a8907f13c384ff6dddac1b3435c2971430f131d933cbe">
 ]>
 
 <PLUGIN
@@ -36,6 +36,12 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.11.14.1303
+
+**Maintenance**
+
+- chore: update NetBird to 0.83.1 (#68)
 
 ### 2026.11.10.1441
 
@@ -123,20 +129,6 @@
 **Maintenance**
 
 - chore: update NetBird to 0.77.1 (#44)
-
-### 2026.08.14.0601
-
-**New Features**
-
-- feat: use the daemon JSON gateway instead of scraping CLI output (#37)
-
-**Bug Fixes**
-
-- fix: stop the boot-time restart loop that leaves NetBird disconnected (#40)
-
-**Maintenance**
-
-- chore: update NetBird to 0.77.0 (#41)
 
 Older releases: https://github.com/netbirdio/netbird-unraid/releases
 
