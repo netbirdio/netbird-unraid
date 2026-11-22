@@ -2,7 +2,7 @@
 <!DOCTYPE PLUGIN [
 <!ENTITY name        "netbird">
 <!ENTITY author      "NetBird">
-<!ENTITY version     "2026.11.14.1303">
+<!ENTITY version     "2026.11.22.1622">
 <!ENTITY launch      "Settings/Netbird">
 <!ENTITY gitUser     "netbirdio">
 <!ENTITY gitRepo     "netbird-unraid">
@@ -20,7 +20,7 @@
 <!ENTITY pkgName       "unraid-netbird-utils">
 <!ENTITY pkgFile       "&pkgName;-&version;-noarch-1.txz">
 <!ENTITY pkgURL        "https://github.com/&gitUser;/&gitRepo;/releases/download/&version;/&pkgFile;">
-<!ENTITY pkgSHA256     "0820792220d31024341a8907f13c384ff6dddac1b3435c2971430f131d933cbe">
+<!ENTITY pkgSHA256     "3f9380274cea786394bdd6b7dc8a2f6b3e49b1459e1e1cdbd0b86fa75978cfa3">
 ]>
 
 <PLUGIN
@@ -36,6 +36,12 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.11.22.1622
+
+**Maintenance**
+
+- chore: update NetBird to 0.83.2 (#69)
 
 ### 2026.11.14.1303
 
@@ -114,21 +120,6 @@
 **Maintenance**
 
 - chore: update NetBird to 0.78.1 (#48)
-
-### 2026.08.26.0559
-
-**New Features**
-
-- feat: status summary on collapsed card (#45)
-- feat: add rosenpass toggle (#43)
-
-**Bug Fixes**
-
-- fix: prevent strict Rosenpass from locking out the host (#46)
-
-**Maintenance**
-
-- chore: update NetBird to 0.77.1 (#44)
 
 Older releases: https://github.com/netbirdio/netbird-unraid/releases
 
